@@ -1,4 +1,4 @@
-import type { GitHubClient } from "./github.js";
+import type { GitHubClient } from "./github";
 
 export type IssueProposal = {
 	readonly title: string;

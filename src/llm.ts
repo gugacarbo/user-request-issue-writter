@@ -1,5 +1,5 @@
-import type { GitHubClient } from "./github.js";
-import { dispatchTool, type IssueProposal, toolSchemas } from "./tools.js";
+import type { GitHubClient } from "./github";
+import { dispatchTool, type IssueProposal, toolSchemas } from "./tools";
 
 export type ToolCall = {
 	readonly name: string;
@@ -35,17 +35,22 @@ export type LlmClient = {
 	readonly chat: (request: ChatRequest) => Promise<ChatResponse>;
 };
 
+export type IssueContext = {
+	readonly urlAtual?: string;
+	readonly categoria?: string;
+	readonly contextoSessao?: string;
+	readonly logsConsole?: string;
+	readonly logsRede?: string;
+	readonly screenshot?: string;
+};
+
 export type GenerateIssueInput = {
 	readonly owner: string;
 	readonly repo: string;
-	readonly commentBody: string;
-	readonly commentUser: string;
-	readonly issue: {
-		readonly number: number;
-		readonly title: string;
-		readonly body: string;
-	};
-	readonly commentUrl: string;
+	readonly requesterName: string;
+	readonly requesterEmail: string;
+	readonly descricao: string;
+	readonly context?: IssueContext;
 };
 
 export type GenerateIssueOptions = {
@@ -58,19 +63,28 @@ type DebugLog = (message: string, data?: Record<string, unknown>) => void;
 const DEFAULT_MAX_ITERATIONS = 15;
 
 const SYSTEM_PROMPT =
-	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user comment. Use the tools to understand the repository context before submitting. Always call submit_issue exactly once when ready to finalize the issue.";
+	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user-submitted ticket. Use the tools to understand the repository context before submitting. Always call submit_issue exactly once when ready to finalize the issue.";
 
 function buildUserMessage(input: GenerateIssueInput): string {
-	return [
+	const lines = [
 		`Repository: ${input.owner}/${input.repo}`,
-		`Comment author: ${input.commentUser}`,
-		`Comment URL: ${input.commentUrl}`,
-		`Original issue #${input.issue.number}: ${input.issue.title}`,
-		`Original issue body: ${input.issue.body ?? "(empty)"}`,
-		`User comment: ${input.commentBody}`,
+		`Requester: ${input.requesterName} (${input.requesterEmail})`,
+		`Description: ${input.descricao}`,
+	];
+	const c = input.context;
+	if (c) {
+		if (c.urlAtual) lines.push(`Current URL: ${c.urlAtual}`);
+		if (c.categoria) lines.push(`Category: ${c.categoria}`);
+		if (c.contextoSessao) lines.push(`Session context: ${c.contextoSessao}`);
+		if (c.logsConsole) lines.push(`Console logs:\n${c.logsConsole}`);
+		if (c.logsRede) lines.push(`Network logs:\n${c.logsRede}`);
+		if (c.screenshot) lines.push(`Screenshot: ${c.screenshot}`);
+	}
+	lines.push(
 		"",
-		"Draft a well-structured GitHub issue based on this comment. Call submit_issue with the title, body (Markdown), and optional labels.",
-	].join("\n");
+		"Draft a well-structured GitHub issue based on this ticket. Call submit_issue with the title, body (Markdown), and optional labels.",
+	);
+	return lines.join("\n");
 }
 
 export async function generateIssue(
@@ -89,7 +103,7 @@ export async function generateIssue(
 	debug?.("generateIssue started", {
 		owner: input.owner,
 		repo: input.repo,
-		commentUser: input.commentUser,
+		requester: input.requesterName,
 	});
 
 	for (let iteration = 0; iteration < maxIterations; iteration += 1) {

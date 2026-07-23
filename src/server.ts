@@ -1,33 +1,45 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import type { GitHubClient } from "./github.js";
+import { isRepoAllowed } from "./allowlist";
+import type { GitHubClient } from "./github";
 import {
 	type GenerateIssueInput,
 	generateIssue,
+	type IssueContext,
 	type LlmClient,
-} from "./llm.js";
-import { extractContext, isRelevantEvent, verifySignature } from "./webhook.js";
+} from "./llm";
+import { extractTicket, type TicketContext, verifySignature } from "./webhook";
 
 export type ServerDeps = {
 	readonly github: GitHubClient;
 	readonly llm: LlmClient;
 	readonly webhookSecret: string;
-	readonly triggerPrefix: string | undefined;
 	readonly dedupeTtlMs?: number;
 	readonly logger?: false | { readonly level: string };
 };
 
 const DEFAULT_DEDUPE_TTL_MS = 10 * 60 * 1000;
 
+function extractContextFields(ctx: TicketContext): IssueContext {
+	return {
+		urlAtual: ctx.urlAtual,
+		categoria: ctx.categoria,
+		contextoSessao: ctx.contextoSessao,
+		logsConsole: ctx.logsConsole,
+		logsRede: ctx.logsRede,
+		screenshot: ctx.screenshot,
+	};
+}
+
 function buildIssueBody(
 	proposal: { title: string; body: string },
-	commentUser: string,
-	commentUrl: string,
+	requesterName: string,
+	requesterEmail: string,
 ): string {
 	return [
 		proposal.body,
 		"",
 		"---",
-		`_Drafted from a comment by @${commentUser}: ${commentUrl}_`,
+		`_Requested by ${requesterName} (${requesterEmail})_`,
 	].join("\n");
 }
 
@@ -58,8 +70,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 	server.get("/health", async () => ({ status: "ok" }));
 
 	server.post("/webhook/github", async (request, reply) => {
-		const event = request.headers["x-github-event"] as string | undefined;
-		const delivery = request.headers["x-github-delivery"] as string | undefined;
+		const delivery =
+			(request.headers["x-delivery-id"] as string | undefined) ??
+			(request.headers["x-github-delivery"] as string | undefined);
 		const signature = request.headers["x-hub-signature-256"] as
 			| string
 			| undefined;
@@ -79,8 +92,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 			return reply.code(422).send({ error: "invalid json" });
 		}
 
-		if (!isRelevantEvent(event ?? "", payload as { action?: string })) {
-			return reply.code(200).send({ ignored: true });
+		const ctx = extractTicket(payload as Parameters<typeof extractTicket>[0]);
+		if (!ctx) {
+			return reply
+				.code(400)
+				.send({ error: "invalid payload: missing repo or descricao" });
+		}
+
+		if (!isRepoAllowed(`${ctx.owner}/${ctx.repo}`)) {
+			return reply
+				.code(403)
+				.send({ error: "repo not allowed", repo: `${ctx.owner}/${ctx.repo}` });
 		}
 
 		const deliveryId = delivery ?? `unknown-${Date.now()}`;
@@ -90,22 +112,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 				.send({ accepted: true, delivery: deliveryId, duplicate: true });
 		}
 
-		const ctx = extractContext(payload as Parameters<typeof extractContext>[0]);
-		if (!ctx.matchesTrigger(deps.triggerPrefix)) {
-			return reply.code(200).send({ ignored: true, reason: "trigger-prefix" });
-		}
-
 		const input: GenerateIssueInput = {
 			owner: ctx.owner,
 			repo: ctx.repo,
-			commentBody: ctx.commentBody,
-			commentUser: ctx.commentUser,
-			commentUrl: ctx.commentUrl,
-			issue: {
-				number: ctx.issueNumber,
-				title: ctx.issueTitle,
-				body: ctx.issueBody,
-			},
+			requesterName: ctx.requesterName,
+			requesterEmail: ctx.requesterEmail,
+			descricao: ctx.descricao,
+			context: extractContextFields(ctx),
 		};
 
 		const dryRun = (request.query as { dryRun?: string }).dryRun === "true";
@@ -129,18 +142,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 					dryRun: true,
 					delivery: deliveryId,
 					repo: { owner: input.owner, name: input.repo },
-					comment: {
-						user: input.commentUser,
-						body: input.commentBody,
-						url: input.commentUrl,
+					requester: {
+						name: input.requesterName,
+						email: input.requesterEmail,
 					},
-					sourceIssue: {
-						number: input.issue.number,
-						title: input.issue.title,
-					},
+					descricao: input.descricao,
 					issue: {
 						title: proposal.title,
-						body: buildIssueBody(proposal, input.commentUser, input.commentUrl),
+						body: buildIssueBody(
+							proposal,
+							input.requesterName,
+							input.requesterEmail,
+						),
 						labels: proposal.labels,
 					},
 				});
@@ -174,7 +187,11 @@ async function processInBackground(
 			},
 		});
 		if (!proposal) return;
-		const body = buildIssueBody(proposal, input.commentUser, input.commentUrl);
+		const body = buildIssueBody(
+			proposal,
+			input.requesterName,
+			input.requesterEmail,
+		);
 		await deps.github.createIssue(input.owner, input.repo, {
 			title: proposal.title,
 			body,

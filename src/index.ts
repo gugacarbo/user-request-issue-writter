@@ -1,7 +1,7 @@
-import { env } from "./env.js";
-import { createGitHubClient } from "./github.js";
-import { createOpenAiLlmClient } from "./openai.js";
-import { buildServer } from "./server.js";
+import { env } from "./env";
+import { createGitHubClient } from "./github";
+import { createOpenAiLlmClient } from "./openai";
+import { buildServer } from "./server";
 
 async function main(): Promise<void> {
 	const server = buildServer({
@@ -12,7 +12,6 @@ async function main(): Promise<void> {
 			model: env.LLM_MODEL,
 		}),
 		webhookSecret: env.WEBHOOK_SECRET,
-		triggerPrefix: env.TRIGGER_PREFIX,
 		logger: { level: env.LOG_LEVEL },
 	});
 

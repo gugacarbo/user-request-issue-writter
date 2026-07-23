@@ -1,26 +1,31 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export type WebhookContext = {
+export type TicketContext = {
 	readonly owner: string;
 	readonly repo: string;
-	readonly commentBody: string;
-	readonly commentUser: string;
-	readonly commentUrl: string;
-	readonly issueNumber: number;
-	readonly issueTitle: string;
-	readonly issueBody: string;
-	readonly matchesTrigger: (prefix: string | undefined) => boolean;
+	readonly requesterName: string;
+	readonly requesterEmail: string;
+	readonly descricao: string;
+	readonly urlAtual?: string;
+	readonly categoria?: string;
+	readonly contextoSessao?: string;
+	readonly logsConsole?: string;
+	readonly logsRede?: string;
+	readonly screenshot?: string;
 };
 
-type IssueCommentPayload = {
-	action: string;
-	repository?: {
-		full_name?: string;
-		name?: string;
-		owner?: { login?: string };
+type TicketPayload = {
+	repo?: string;
+	requester?: { name?: string; email?: string };
+	payload?: {
+		descricao?: string;
+		url_atual?: string;
+		categoria?: string;
+		contexto_da_sessao?: string;
+		logs_do_console?: string;
+		logs_de_rede?: string;
+		screenshot?: string;
 	};
-	issue?: { number: number; title: string; body?: string };
-	comment?: { body?: string; user?: { login?: string }; html_url?: string };
 };
 
 export function verifySignature(
@@ -35,34 +40,27 @@ export function verifySignature(
 	return timingSafeEqual(expected, provided);
 }
 
-export function isRelevantEvent(
-	event: string,
-	body: { action?: string },
-): boolean {
-	return event === "issue_comment" && body.action === "created";
-}
+export function extractTicket(payload: TicketPayload): TicketContext | null {
+	const repoStr = payload.repo?.trim();
+	if (!repoStr) return null;
+	const parts = repoStr.split("/");
+	if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
 
-export function extractContext(payload: IssueCommentPayload): WebhookContext {
-	const repo = payload.repository;
-	const owner = repo?.owner?.login ?? repo?.full_name?.split("/")[0] ?? "";
-	const repoName = repo?.name ?? repo?.full_name?.split("/")[1] ?? "";
-	const commentBody = payload.comment?.body ?? "";
-	const issue = payload.issue;
-	const ctx: Omit<WebhookContext, "matchesTrigger"> = {
-		owner,
-		repo: repoName,
-		commentBody,
-		commentUser: payload.comment?.user?.login ?? "",
-		commentUrl: payload.comment?.html_url ?? "",
-		issueNumber: issue?.number ?? 0,
-		issueTitle: issue?.title ?? "",
-		issueBody: issue?.body ?? "",
-	};
+	const descricao = payload.payload?.descricao?.trim();
+	if (!descricao) return null;
+
+	const p = payload.payload;
 	return {
-		...ctx,
-		matchesTrigger: (prefix: string | undefined) => {
-			if (!prefix) return true;
-			return commentBody.trimStart().startsWith(prefix);
-		},
+		owner: parts[0],
+		repo: parts[1],
+		requesterName: payload.requester?.name?.trim() ?? "",
+		requesterEmail: payload.requester?.email?.trim() ?? "",
+		descricao,
+		urlAtual: p?.url_atual?.trim() || undefined,
+		categoria: p?.categoria?.trim() || undefined,
+		contextoSessao: p?.contexto_da_sessao?.trim() || undefined,
+		logsConsole: p?.logs_do_console?.trim() || undefined,
+		logsRede: p?.logs_de_rede?.trim() || undefined,
+		screenshot: p?.screenshot?.trim() || undefined,
 	};
 }

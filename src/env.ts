@@ -10,7 +10,6 @@ export const env = createEnv({
 		LLM_API_KEY: z.string().min(1),
 		LLM_MODEL: z.string().min(1),
 		LOG_LEVEL: z.string().default("info"),
-		TRIGGER_PREFIX: z.string().optional(),
 	},
 	runtimeEnv: process.env,
 	emptyStringAsUndefined: true,

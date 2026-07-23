@@ -1,59 +1,23 @@
 ### Variables
 # Set WEBHOOK_SECRET to match your .env value
-# The signature below was computed with secret = "dev-secret-changeme"
-# To recompute: node -e "console.log('sha256='+require('crypto').createHmac('sha256','dev-secret-changeme').update('<body>').digest('hex'))"
+# The signatures below were computed with secret = "dev-secret-changeme"
+# Recompute: printf '%s' '<compact-json>' | openssl dgst -sha256 -hmac "dev-secret-changeme"
 
-### Local — Normal webhook (202 + background processing)
+### Local — Normal webhook (202 + background processing, full context)
 POST http://localhost:8080/webhook/github
 Content-Type: application/json
-X-GitHub-Event: issue_comment
-X-GitHub-Delivery: manual-test-001
-X-Hub-Signature-256: sha256=c0f969df5772715afaf2801c42edf54a4deb0cd17c4b21e6a5e71aba0656708e
+X-Delivery-Id: manual-test-001
+X-Hub-Signature-256: sha256=1c433d1a7e7a6b4349bbe00438cc89b292e9d4b09adce66f313bbd4ab491f71f
 
-{
-  "action": "created",
-  "repository": {
-    "full_name": "gugacarbo/user-request-issue-writter",
-    "name": "user-request-issue-writter",
-    "owner": { "login": "gugacarbo" }
-  },
-  "issue": {
-    "number": 1,
-    "title": "Test issue",
-    "body": "This is a test issue"
-  },
-  "comment": {
-    "body": "Please create an issue to investigate the login flow in src/index.ts",
-    "user": { "login": "tester" },
-    "html_url": "https://github.com/gugacarbo/user-request-issue-writter/issues/1#issuecomment-1"
-  }
-}
+{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug","contexto_da_sessao":"Chrome 120 on macOS","logs_do_console":"TypeError: cannot read addEventListener","logs_de_rede":"POST /api/login 500"}}
 
 ### Local — DryRun (200 + JSON with drafted issue, no createIssue)
 POST http://localhost:8080/webhook/github?dryRun=true
 Content-Type: application/json
-X-GitHub-Event: issue_comment
-X-GitHub-Delivery: manual-test-002
-X-Hub-Signature-256: sha256=c0f969df5772715afaf2801c42edf54a4deb0cd17c4b21e6a5e71aba0656708e
+X-Delivery-Id: manual-test-002
+X-Hub-Signature-256: sha256=60b3ccb628b113df6b19446b8c6eeb206b6dacf1481c1dd69875ece1dde66fbc
 
-{
-  "action": "created",
-  "repository": {
-    "full_name": "gugacarbo/user-request-issue-writter",
-    "name": "user-request-issue-writter",
-    "owner": { "login": "gugacarbo" }
-  },
-  "issue": {
-    "number": 1,
-    "title": "Test issue",
-    "body": "This is a test issue"
-  },
-  "comment": {
-    "body": "Please create an issue to investigate the login flow in src/index.ts",
-    "user": { "login": "tester" },
-    "html_url": "https://github.com/gugacarbo/user-request-issue-writter/issues/1#issuecomment-1"
-  }
-}
+{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
 
 ### Local — Healthcheck
 GET http://localhost:8080/health
@@ -61,51 +25,15 @@ GET http://localhost:8080/health
 ### Remote — Normal webhook (replace <host> with your VPS domain/IP)
 POST https://<host>/webhook/github
 Content-Type: application/json
-X-GitHub-Event: issue_comment
-X-GitHub-Delivery: remote-test-001
-X-Hub-Signature-256: sha256=c0f969df5772715afaf2801c42edf54a4deb0cd17c4b21e6a5e71aba0656708e
+X-Delivery-Id: remote-test-001
+X-Hub-Signature-256: sha256=60b3ccb628b113df6b19446b8c6eeb206b6dacf1481c1dd69875ece1dde66fbc
 
-{
-  "action": "created",
-  "repository": {
-    "full_name": "gugacarbo/user-request-issue-writter",
-    "name": "user-request-issue-writter",
-    "owner": { "login": "gugacarbo" }
-  },
-  "issue": {
-    "number": 1,
-    "title": "Test issue",
-    "body": "This is a test issue"
-  },
-  "comment": {
-    "body": "Please create an issue to investigate the login flow in src/index.ts",
-    "user": { "login": "tester" },
-    "html_url": "https://github.com/gugacarbo/user-request-issue-writter/issues/1#issuecomment-1"
-  }
-}
+{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
 
 ### Remote — DryRun (replace <host> with your VPS domain/IP)
 POST https://<host>/webhook/github?dryRun=true
 Content-Type: application/json
-X-GitHub-Event: issue_comment
-X-GitHub-Delivery: remote-test-002
-X-Hub-Signature-256: sha256=c0f969df5772715afaf2801c42edf54a4deb0cd17c4b21e6a5e71aba0656708e
+X-Delivery-Id: remote-test-002
+X-Hub-Signature-256: sha256=60b3ccb628b113df6b19446b8c6eeb206b6dacf1481c1dd69875ece1dde66fbc
 
-{
-  "action": "created",
-  "repository": {
-    "full_name": "gugacarbo/user-request-issue-writter",
-    "name": "user-request-issue-writter",
-    "owner": { "login": "gugacarbo" }
-  },
-  "issue": {
-    "number": 1,
-    "title": "Test issue",
-    "body": "This is a test issue"
-  },
-  "comment": {
-    "body": "Please create an issue to investigate the login flow in src/index.ts",
-    "user": { "login": "tester" },
-    "html_url": "https://github.com/gugacarbo/user-request-issue-writter/issues/1#issuecomment-1"
-  }
-}
+{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}

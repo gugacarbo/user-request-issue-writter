@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { ChatRequest, ChatResponse, LlmClient, ToolCall } from "./llm.js";
+import type { ChatRequest, ChatResponse, LlmClient, ToolCall } from "./llm";
 
 type SdkMessage = Parameters<
 	OpenAI["chat"]["completions"]["create"]
