@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { isRepoAllowed } from "./allowlist";
 import type { GitHubClient } from "./github";
@@ -45,15 +46,15 @@ function buildIssueBody(
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
 	const ttl = deps.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
-	const seenDeliveries = new Map<string, number>();
+	const seenBodies = new Map<string, number>();
 
-	function isDuplicate(delivery: string): boolean {
+	function isDuplicate(bodyHash: string): boolean {
 		const now = Date.now();
-		for (const [key, expires] of seenDeliveries) {
-			if (expires < now) seenDeliveries.delete(key);
+		for (const [key, expires] of seenBodies) {
+			if (expires < now) seenBodies.delete(key);
 		}
-		if (seenDeliveries.has(delivery)) return true;
-		seenDeliveries.set(delivery, now + ttl);
+		if (seenBodies.has(bodyHash)) return true;
+		seenBodies.set(bodyHash, now + ttl);
 		return false;
 	}
 
@@ -70,9 +71,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 	server.get("/health", async () => ({ status: "ok" }));
 
 	server.post("/webhook/github", async (request, reply) => {
-		const delivery =
-			(request.headers["x-delivery-id"] as string | undefined) ??
-			(request.headers["x-github-delivery"] as string | undefined);
 		const signature = request.headers["x-hub-signature-256"] as
 			| string
 			| undefined;
@@ -105,11 +103,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 				.send({ error: "repo not allowed", repo: `${ctx.owner}/${ctx.repo}` });
 		}
 
-		const deliveryId = delivery ?? `unknown-${Date.now()}`;
-		if (isDuplicate(deliveryId)) {
+		const bodyHash = createHash("sha256").update(rawBody).digest("hex");
+		if (isDuplicate(bodyHash)) {
 			return reply
 				.code(200)
-				.send({ accepted: true, delivery: deliveryId, duplicate: true });
+				.send({ accepted: true, bodyHash, duplicate: true });
 		}
 
 		const input: GenerateIssueInput = {
@@ -134,13 +132,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 				if (!proposal) {
 					return reply.code(200).send({
 						dryRun: true,
-						delivery: deliveryId,
+						bodyHash,
 						result: null,
 					});
 				}
 				return reply.code(200).send({
 					dryRun: true,
-					delivery: deliveryId,
+					bodyHash,
 					repo: { owner: input.owner, name: input.repo },
 					requester: {
 						name: input.requesterName,
@@ -168,7 +166,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
 		void processInBackground(server, deps, input);
 
-		return reply.code(202).send({ accepted: true, delivery: deliveryId });
+		return reply.code(202).send({ accepted: true, bodyHash });
 	});
 
 	return server;

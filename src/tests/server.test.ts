@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateIssueResult, GitHubClient } from "../github";
@@ -14,6 +14,10 @@ const SECRET = "topsecret";
 
 function sign(body: string): string {
 	return `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`;
+}
+
+function bodyHash(body: string): string {
+	return createHash("sha256").update(body).digest("hex");
 }
 
 function ticketPayload(
@@ -73,7 +77,6 @@ async function app(deps: ServerDeps): Promise<FastifyInstance> {
 const baseHeaders = (body: string) => ({
 	"content-type": "application/json",
 	"x-hub-signature-256": sign(body),
-	"x-delivery-id": "d-test",
 });
 
 describe("server", () => {
@@ -102,7 +105,6 @@ describe("server", () => {
 			headers: {
 				"content-type": "application/json",
 				"x-hub-signature-256": "sha256=bad",
-				"x-delivery-id": "d2",
 			},
 			payload: body,
 		});
@@ -163,7 +165,9 @@ describe("server", () => {
 			payload: body,
 		});
 		expect(res.statusCode).toBe(202);
-		expect(res.json()).toEqual({ accepted: true, delivery: "d-test" });
+		const json = res.json() as { accepted: boolean; bodyHash: string };
+		expect(json.accepted).toBe(true);
+		expect(json.bodyHash).toBe(bodyHash(body));
 		await vi.waitFor(() => expect(gh.createIssue).toHaveBeenCalled());
 		const call = (gh.createIssue as ReturnType<typeof vi.fn>).mock.calls[0];
 		expect(call?.[0]).toBe("owner");
@@ -173,7 +177,7 @@ describe("server", () => {
 		expect(proposal.body).toContain("alice@example.com");
 	});
 
-	it("ignores duplicate delivery id (dedupe)", async () => {
+	it("ignores duplicate body hash (dedupe)", async () => {
 		const gh = mockGitHub();
 		server = await app(deps({ github: gh }));
 		const body = ticketPayload();
@@ -192,11 +196,14 @@ describe("server", () => {
 		});
 		expect(first.statusCode).toBe(202);
 		expect(second.statusCode).toBe(200);
-		expect(second.json()).toEqual({
-			accepted: true,
-			delivery: "d-test",
-			duplicate: true,
-		});
+		const secondJson = second.json() as {
+			accepted: boolean;
+			bodyHash: string;
+			duplicate: boolean;
+		};
+		expect(secondJson.accepted).toBe(true);
+		expect(secondJson.bodyHash).toBe(bodyHash(body));
+		expect(secondJson.duplicate).toBe(true);
 		await vi.waitFor(() =>
 			expect(
 				(gh.createIssue as ReturnType<typeof vi.fn>).mock.calls,
@@ -217,12 +224,14 @@ describe("server", () => {
 		expect(res.statusCode).toBe(200);
 		const json = res.json() as {
 			dryRun: boolean;
+			bodyHash: string;
 			repo: { owner: string; name: string };
 			requester: { name: string; email: string };
 			descricao: string;
 			issue: { title: string; body: string; labels?: string[] };
 		};
 		expect(json.dryRun).toBe(true);
+		expect(json.bodyHash).toBe(bodyHash(body));
 		expect(json.repo).toEqual({ owner: "owner", name: "repo" });
 		expect(json.requester.name).toBe("Alice");
 		expect(json.requester.email).toBe("alice@example.com");
@@ -273,25 +282,7 @@ describe("server", () => {
 		expect(json.detail).toBe("LLM down");
 	});
 
-	it("uses x-github-delivery as fallback delivery id", async () => {
-		const gh = mockGitHub({ number: 99, url: "https://example/99" });
-		server = await app(deps({ github: gh }));
-		const body = ticketPayload();
-		const res = await server.inject({
-			method: "POST",
-			url: "/webhook/github",
-			headers: {
-				"content-type": "application/json",
-				"x-hub-signature-256": sign(body),
-				"x-github-delivery": "gh-delivery-1",
-			},
-			payload: body,
-		});
-		expect(res.statusCode).toBe(202);
-		expect(res.json()).toEqual({ accepted: true, delivery: "gh-delivery-1" });
-	});
-
-	it("generates a fallback delivery id when no delivery header is present", async () => {
+	it("returns 202 with bodyHash when no delivery header is present", async () => {
 		const gh = mockGitHub();
 		server = await app(deps({ github: gh }));
 		const body = ticketPayload();
@@ -305,9 +296,9 @@ describe("server", () => {
 			payload: body,
 		});
 		expect(res.statusCode).toBe(202);
-		const json = res.json() as { accepted: boolean; delivery: string };
+		const json = res.json() as { accepted: boolean; bodyHash: string };
 		expect(json.accepted).toBe(true);
-		expect(json.delivery).toMatch(/^unknown-/);
+		expect(json.bodyHash).toBe(bodyHash(body));
 	});
 
 	it("returns 422 when body is not valid JSON", async () => {
@@ -317,7 +308,6 @@ describe("server", () => {
 			headers: {
 				"content-type": "application/json",
 				"x-hub-signature-256": sign("not-json"),
-				"x-delivery-id": "d-json",
 			},
 			payload: "not-json",
 		});
@@ -331,7 +321,6 @@ describe("server", () => {
 			headers: {
 				"content-type": "application/json",
 				"x-hub-signature-256": "sha256=abc",
-				"x-delivery-id": "d-empty",
 			},
 		});
 		expect(res.statusCode).toBe(401);
