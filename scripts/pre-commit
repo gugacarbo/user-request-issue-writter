@@ -4,7 +4,7 @@
 #   ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 # Contornar exige ato deliberado (git commit --no-verify) — e é assim que deve ser.
 set -euo pipefail
-exec python3 "$(git rev-parse --show-toplevel)/scripts/docs-check"
+python3 "$(git rev-parse --show-toplevel)/scripts/docs-check"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 . "$SCRIPT_DIR/lib/shared.sh"
