@@ -154,4 +154,72 @@ describe("llm.generateIssue", () => {
 			expect.objectContaining({ maxIterations: 2 }),
 		);
 	});
+
+	it("includes context fields in the user message", async () => {
+		const llm = scriptLlm([
+			[{ name: "submit_issue", arguments: { title: "t", body: "b" } }],
+		]);
+		const { generateIssue } = await import("../llm");
+		await generateIssue(llm, mockGitHub(), {
+			...BASE_INPUT,
+			context: {
+				urlAtual: "https://app.example.com/page",
+				categoria: "bug",
+				contextoSessao: "user logged in",
+				logsConsole: "Error: something",
+				logsRede: "GET /api 500",
+				screenshot: "data:image/png;base64,...",
+			},
+		});
+		const firstCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+		const systemText = JSON.stringify(firstCall?.messages ?? []);
+		expect(systemText).toContain("https://app.example.com/page");
+		expect(systemText).toContain("bug");
+		expect(systemText).toContain("user logged in");
+		expect(systemText).toContain("Error: something");
+		expect(systemText).toContain("GET /api 500");
+		expect(systemText).toContain("data:image/png;base64,...");
+	});
+
+	it("handles toolCalls being undefined in response", async () => {
+		const llm: LlmClient = {
+			chat: vi.fn(async () => ({
+				toolCalls: undefined as unknown as ToolCall[],
+				content: null,
+			})),
+		};
+		const { generateIssue } = await import("../llm");
+		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
+			maxIterations: 1,
+		});
+		expect(proposal).toBeNull();
+	});
+
+	it("calls onDebug with truncated content for large tool results", async () => {
+		const longContent = "x".repeat(600);
+		const gh = mockGitHub();
+		(gh.getFileContent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+			longContent,
+		);
+		const llm = scriptLlm([
+			[{ name: "read_file", arguments: { path: "big.ts" } }],
+			[
+				{
+					name: "submit_issue",
+					arguments: { title: "Bug", body: "desc" },
+				},
+			],
+		]);
+		const onDebug = vi.fn();
+		const { generateIssue } = await import("../llm");
+		await generateIssue(llm, gh, BASE_INPUT, { onDebug });
+
+		const resultCall = onDebug.mock.calls.find(
+			([msg]) => msg === "tool result",
+		);
+		expect(resultCall?.[1]).toMatchObject({
+			tool: "read_file",
+			result: expect.stringContaining("...(truncated)"),
+		});
+	});
 });

@@ -83,4 +83,9 @@ describe("env", () => {
 		process.env.PORT = "not-a-port";
 		await expect(import("../env")).rejects.toThrow(/PORT/i);
 	});
+
+	it("throws when LLM_BASE_URL is not a valid URL", async () => {
+		process.env.LLM_BASE_URL = "not-a-url";
+		await expect(import("../env")).rejects.toThrow(/LLM_BASE_URL/i);
+	});
 });

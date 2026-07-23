@@ -99,4 +99,84 @@ describe("tools", () => {
 			/unknown tool/i,
 		);
 	});
+
+	it("get_repo_info handles missing description", async () => {
+		const gh = mockGitHub({
+			getRepoInfo: vi.fn(async () => ({
+				description: null,
+				languages: { TypeScript: 1 },
+				readme: "# demo",
+			})),
+		});
+		const { dispatchTool } = await import("../tools");
+		const result = await dispatchTool("get_repo_info", {}, gh, "owner", "repo");
+		expect(result.isTerminal).toBe(false);
+		expect(result.isTerminal === false && result.content).toContain(
+			"Description: (none)",
+		);
+	});
+
+	it("get_repo_info handles missing readme", async () => {
+		const gh = mockGitHub({
+			getRepoInfo: vi.fn(async () => ({
+				description: "demo",
+				languages: { TypeScript: 1 },
+				readme: null,
+			})),
+		});
+		const { dispatchTool } = await import("../tools");
+		const result = await dispatchTool("get_repo_info", {}, gh, "owner", "repo");
+		expect(result.isTerminal).toBe(false);
+		expect(result.isTerminal === false && result.content).toContain(
+			"README: (none)",
+		);
+	});
+
+	it("get_repo_info handles empty languages", async () => {
+		const gh = mockGitHub({
+			getRepoInfo: vi.fn(async () => ({
+				description: "demo",
+				languages: {},
+				readme: "# demo",
+			})),
+		});
+		const { dispatchTool } = await import("../tools");
+		const result = await dispatchTool("get_repo_info", {}, gh, "owner", "repo");
+		expect(result.isTerminal).toBe(false);
+		expect(result.isTerminal === false && result.content).toContain(
+			"Languages: ",
+		);
+	});
+
+	it("submit_issue handles missing labels", async () => {
+		const gh = mockGitHub();
+		const { dispatchTool } = await import("../tools");
+		const result = await dispatchTool(
+			"submit_issue",
+			{ title: "Bug", body: "desc" },
+			gh,
+			"owner",
+			"repo",
+		);
+		expect(result).toEqual({
+			isTerminal: true,
+			issue: { title: "Bug", body: "desc", labels: undefined },
+		});
+	});
+
+	it("submit_issue handles non-array labels", async () => {
+		const gh = mockGitHub();
+		const { dispatchTool } = await import("../tools");
+		const result = await dispatchTool(
+			"submit_issue",
+			{ title: "Bug", body: "desc", labels: "not-an-array" },
+			gh,
+			"owner",
+			"repo",
+		);
+		expect(result).toEqual({
+			isTerminal: true,
+			issue: { title: "Bug", body: "desc", labels: undefined },
+		});
+	});
 });

@@ -232,4 +232,108 @@ describe("server", () => {
 		expect(json.issue.body).toContain("alice@example.com");
 		expect(gh.createIssue).not.toHaveBeenCalled();
 	});
+
+	it("dryRun=true returns null result when LLM returns no proposal", async () => {
+		const gh = mockGitHub();
+		const llm: LlmClient = {
+			chat: vi.fn(async () => ({ toolCalls: [], content: null })),
+		};
+		server = await app(deps({ github: gh, llm }));
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github?dryRun=true",
+			headers: baseHeaders(body),
+			payload: body,
+		});
+		expect(res.statusCode).toBe(200);
+		const json = res.json() as { dryRun: boolean; result: null };
+		expect(json.dryRun).toBe(true);
+		expect(json.result).toBeNull();
+	});
+
+	it("dryRun=true returns 500 when generateIssue throws", async () => {
+		const gh = mockGitHub();
+		const llm: LlmClient = {
+			chat: vi.fn(async () => {
+				throw new Error("LLM down");
+			}),
+		};
+		server = await app(deps({ github: gh, llm }));
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github?dryRun=true",
+			headers: baseHeaders(body),
+			payload: body,
+		});
+		expect(res.statusCode).toBe(500);
+		const json = res.json() as { error: string; detail: string };
+		expect(json.error).toBe("processing failed");
+		expect(json.detail).toBe("LLM down");
+	});
+
+	it("uses x-github-delivery as fallback delivery id", async () => {
+		const gh = mockGitHub({ number: 99, url: "https://example/99" });
+		server = await app(deps({ github: gh }));
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github",
+			headers: {
+				"content-type": "application/json",
+				"x-hub-signature-256": sign(body),
+				"x-github-delivery": "gh-delivery-1",
+			},
+			payload: body,
+		});
+		expect(res.statusCode).toBe(202);
+		expect(res.json()).toEqual({ accepted: true, delivery: "gh-delivery-1" });
+	});
+
+	it("generates a fallback delivery id when no delivery header is present", async () => {
+		const gh = mockGitHub();
+		server = await app(deps({ github: gh }));
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github",
+			headers: {
+				"content-type": "application/json",
+				"x-hub-signature-256": sign(body),
+			},
+			payload: body,
+		});
+		expect(res.statusCode).toBe(202);
+		const json = res.json() as { accepted: boolean; delivery: string };
+		expect(json.accepted).toBe(true);
+		expect(json.delivery).toMatch(/^unknown-/);
+	});
+
+	it("returns 422 when body is not valid JSON", async () => {
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github",
+			headers: {
+				"content-type": "application/json",
+				"x-hub-signature-256": sign("not-json"),
+				"x-delivery-id": "d-json",
+			},
+			payload: "not-json",
+		});
+		expect(res.statusCode).toBe(422);
+	});
+
+	it("returns 401 when raw body is missing", async () => {
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github",
+			headers: {
+				"content-type": "application/json",
+				"x-hub-signature-256": "sha256=abc",
+				"x-delivery-id": "d-empty",
+			},
+		});
+		expect(res.statusCode).toBe(401);
+	});
 });

@@ -167,4 +167,68 @@ describe("github client", () => {
 		expect(JSON.parse(calls[0].body).labels).toEqual(["nope"]);
 		expect(JSON.parse(calls[1].body).labels).toBeUndefined();
 	});
+
+	it("getJson throws with status and body on non-ok response", async () => {
+		const mock = vi.fn(async () =>
+			jsonResponse({ message: "Not Found" }, { status: 404, ok: false }),
+		);
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github");
+		const gh = createGitHubClient(TOKEN);
+		await expect(gh.getRepoTree("owner", "repo")).rejects.toThrow(
+			/GitHub API 404/,
+		);
+	});
+
+	it("getRepoInfo handles readme fetch error gracefully", async () => {
+		const mock = vi.fn(async (input: RequestInfo) => {
+			const url = typeof input === "string" ? input : input.url;
+			if (url.endsWith("/repos/owner/repo"))
+				return jsonResponse({ description: "demo" });
+			if (url.includes("/languages")) return jsonResponse({ TypeScript: 1 });
+			if (url.includes("/contents/README.md"))
+				return jsonResponse({ message: "Not Found" }, { status: 404, ok: false });
+			return jsonResponse({});
+		});
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github");
+		const gh = createGitHubClient(TOKEN);
+		const info = await gh.getRepoInfo("owner", "repo");
+		expect(info.description).toBe("demo");
+		expect(info.readme).toBeNull();
+	});
+
+	it("createIssue throws on non-422 error", async () => {
+		const mock = vi.fn(async () =>
+			jsonResponse({ message: "Server Error" }, { status: 500, ok: false }),
+		);
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github");
+		const gh = createGitHubClient(TOKEN);
+		await expect(
+			gh.createIssue("owner", "repo", { title: "t", body: "b" }),
+		).rejects.toThrow(/GitHub createIssue 500/);
+	});
+
+	it("getFileContent returns empty string when content is missing", async () => {
+		const mock = vi.fn(async () =>
+			jsonResponse({ encoding: "base64" }),
+		);
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github");
+		const gh = createGitHubClient(TOKEN);
+		const content = await gh.getFileContent("owner", "repo", "empty.ts");
+		expect(content).toBe("");
+	});
+
+	it("getFileContent returns empty string when encoding is not base64", async () => {
+		const mock = vi.fn(async () =>
+			jsonResponse({ content: "aGVsbG8=", encoding: "utf8" }),
+		);
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github");
+		const gh = createGitHubClient(TOKEN);
+		const content = await gh.getFileContent("owner", "repo", "utf8.ts");
+		expect(content).toBe("");
+	});
 });
