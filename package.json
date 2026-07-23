@@ -11,7 +11,7 @@
 		"build": "tsc",
 		"start": "node dist/index.js",
 		"test": "vitest run",
-		"test:e2e": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/e2e.test.ts",
+		"test:e2e": "node --env-file=.env node_modules/vitest/vitest.mjs run tests/e2e.test.ts tests/github.e2e.test.ts",
 		"test:watch": "vitest",
 		"lint": "biome check",
 		"format": "biome check --write",
@@ -43,7 +43,9 @@
 		"vitest": "^4.1.10"
 	},
 	"dependencies": {
+		"@t3-oss/env-core": "^0.13.11",
 		"fastify": "^5.10.0",
-		"openai": "^6.48.0"
+		"openai": "^6.48.0",
+		"zod": "^4.4.3"
 	}
 }

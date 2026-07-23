@@ -1,54 +1,28 @@
-export type Env = {
-	readonly port: number;
-	readonly webhookSecret: string;
-	readonly githubToken: string;
-	readonly llmBaseUrl: string;
-	readonly llmApiKey: string;
-	readonly llmModel: string;
-	readonly logLevel: string;
-	readonly triggerPrefix: string | undefined;
-};
+import { createEnv, type StandardSchemaV1 } from "@t3-oss/env-core";
+import * as z from "zod";
 
-class EnvError extends Error {
-	constructor(name: string, reason: string) {
-		super(`Invalid env ${name}: ${reason}`);
-		this.name = "EnvError";
-	}
-}
+export const env = createEnv({
+	server: {
+		PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+		WEBHOOK_SECRET: z.string().min(1),
+		GITHUB_TOKEN: z.string().min(1),
+		LLM_BASE_URL: z.string().url(),
+		LLM_API_KEY: z.string().min(1),
+		LLM_MODEL: z.string().min(1),
+		LOG_LEVEL: z.string().default("info"),
+		TRIGGER_PREFIX: z.string().optional(),
+	},
+	runtimeEnv: process.env,
+	emptyStringAsUndefined: true,
+	onValidationError: (issues: readonly StandardSchemaV1.Issue[]) => {
+		const details = issues
+			.map(
+				(issue) =>
+					`${issue.path?.join(".") ?? "(root)"}: ${issue.message ?? "invalid"}`,
+			)
+			.join("; ");
+		throw new Error(`Invalid environment variables: ${details}`);
+	},
+});
 
-function requireString(name: string): string {
-	const value = process.env[name];
-	if (value === undefined || value.trim() === "") {
-		throw new EnvError(name, "missing required value");
-	}
-	return value.trim();
-}
-
-function optionalString(name: string): string | undefined {
-	const value = process.env[name];
-	if (value === undefined || value.trim() === "") return undefined;
-	return value.trim();
-}
-
-function requirePort(name: string, fallback: number): number {
-	const raw = process.env[name];
-	if (raw === undefined || raw.trim() === "") return fallback;
-	const parsed = Number.parseInt(raw, 10);
-	if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
-		throw new EnvError(name, `expected a valid port (1-65535), got "${raw}"`);
-	}
-	return parsed;
-}
-
-export function loadEnv(): Env {
-	return {
-		port: requirePort("PORT", 8080),
-		webhookSecret: requireString("WEBHOOK_SECRET"),
-		githubToken: requireString("GITHUB_TOKEN"),
-		llmBaseUrl: requireString("LLM_BASE_URL"),
-		llmApiKey: requireString("LLM_API_KEY"),
-		llmModel: requireString("LLM_MODEL"),
-		logLevel: optionalString("LOG_LEVEL") ?? "info",
-		triggerPrefix: optionalString("TRIGGER_PREFIX"),
-	};
-}
+export type Env = typeof env;
