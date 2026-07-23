@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { toolSchemas } from "../tools";
 
 const createMock = vi.fn();
 
@@ -109,9 +110,7 @@ describe("openai client", () => {
 			model: "gpt-4",
 			messages: [{ role: "user", content: "search" }],
 		});
-		expect(response.toolCalls).toEqual([
-			{ name: "list_files", arguments: {} },
-		]);
+		expect(response.toolCalls).toEqual([{ name: "list_files", arguments: {} }]);
 	});
 
 	it("skips tool calls with empty function name", async () => {
@@ -150,9 +149,7 @@ describe("openai client", () => {
 			model: "gpt-4",
 			messages: [{ role: "user", content: "hi" }],
 		});
-		expect(response.toolCalls).toEqual([
-			{ name: "list_files", arguments: {} },
-		]);
+		expect(response.toolCalls).toEqual([{ name: "list_files", arguments: {} }]);
 	});
 
 	it("handles malformed JSON in tool call arguments gracefully", async () => {
@@ -246,9 +243,7 @@ describe("openai client", () => {
 				{
 					role: "assistant",
 					content: null,
-					tool_calls: [
-						{ name: "list_files", arguments: { path: "src" } },
-					],
+					tool_calls: [{ name: "list_files", arguments: { path: "src" } }],
 				},
 				{
 					role: "tool",
@@ -348,9 +343,7 @@ describe("openai client", () => {
 				{
 					role: "assistant",
 					content: null,
-					tool_calls: [
-						{ name: "list_files", arguments: {} },
-					],
+					tool_calls: [{ name: "list_files", arguments: {} }],
 				},
 			],
 		});
@@ -421,9 +414,7 @@ describe("openai client", () => {
 			model: "gpt-4",
 			messages: [{ role: "user", content: "hi" }],
 		});
-		expect(response.toolCalls).toEqual([
-			{ name: "list_files", arguments: {} },
-		]);
+		expect(response.toolCalls).toEqual([{ name: "list_files", arguments: {} }]);
 	});
 
 	it("passes tools to the SDK call", async () => {
@@ -443,7 +434,16 @@ describe("openai client", () => {
 			apiKey: "sk-test",
 			model: "gpt-4",
 		});
-		const tools = [{ type: "function" as const, function: { name: "test" } }];
+		const tools: typeof toolSchemas = [
+			{
+				type: "function",
+				function: {
+					name: "test",
+					description: "test tool",
+					parameters: { type: "object", properties: {} },
+				},
+			},
+		];
 		await client.chat({
 			model: "gpt-4",
 			messages: [{ role: "user", content: "hi" }],
