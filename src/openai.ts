@@ -60,7 +60,7 @@ export function createOpenAiLlmClient(options: OpenAiClientOptions): LlmClient {
 	return {
 		async chat(request: ChatRequest): Promise<ChatResponse> {
 			const completion = await client.chat.completions.create({
-				model: options.model || request.model,
+				model: options.model,
 				messages: toSdkMessages(request.messages),
 				tools: request.tools,
 			});

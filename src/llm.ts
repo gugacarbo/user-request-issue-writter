@@ -21,7 +21,7 @@ type ChatMessage =
 	  };
 
 export type ChatRequest = {
-	readonly model: string;
+	readonly model?: string;
 	readonly messages: ChatMessage[];
 	readonly tools?: typeof toolSchemas;
 };
@@ -108,7 +108,6 @@ export async function generateIssue(
 
 	for (let iteration = 0; iteration < maxIterations; iteration += 1) {
 		const response = await llm.chat({
-			model: "",
 			messages,
 			tools: toolSchemas,
 		});
