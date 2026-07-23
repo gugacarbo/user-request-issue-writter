@@ -10,7 +10,7 @@
 		"dev": "tsx watch src/index.ts",
 		"build": "esbuild src/index.ts --bundle --platform=node --format=esm --outfile=dist/index.js --packages=external",
 		"start": "node dist/index.js",
-		"test": "vitest run",
+		"test": "vitest run --coverage",
 		"test:e2e": "node --env-file=.env node_modules/vitest/vitest.mjs run src/tests/e2e.test.ts src/tests/github.e2e.test.ts",
 		"test:watch": "vitest",
 		"lint": "biome check",
