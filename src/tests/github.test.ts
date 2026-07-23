@@ -40,6 +40,7 @@ function captureFetch(): {
 				name: "repo",
 				description: "demo",
 				language: "TypeScript",
+				default_branch: "main",
 			});
 		}
 		if (url.includes("/issues") && init?.method === "POST") {
@@ -79,7 +80,9 @@ describe("github client", () => {
 		const gh = createGitHubClient(TOKEN);
 		const tree = await gh.getRepoTree("owner", "repo");
 		expect(tree).toEqual(["src/main.ts", "README.md"]);
-		expect(calls[0]?.toString()).toContain("/repos/owner/repo/git/trees/main");
+		expect(calls.at(-1)?.toString()).toContain(
+			"/repos/owner/repo/git/trees/main",
+		);
 		expect(mock.mock.calls[0]?.[1]?.headers).toEqual(
 			expect.objectContaining({
 				Authorization: `Bearer ${TOKEN}`,
@@ -187,7 +190,10 @@ describe("github client", () => {
 				return jsonResponse({ description: "demo" });
 			if (url.includes("/languages")) return jsonResponse({ TypeScript: 1 });
 			if (url.includes("/contents/README.md"))
-				return jsonResponse({ message: "Not Found" }, { status: 404, ok: false });
+				return jsonResponse(
+					{ message: "Not Found" },
+					{ status: 404, ok: false },
+				);
 			return jsonResponse({});
 		});
 		vi.stubGlobal("fetch", mock);
@@ -211,9 +217,7 @@ describe("github client", () => {
 	});
 
 	it("getFileContent returns empty string when content is missing", async () => {
-		const mock = vi.fn(async () =>
-			jsonResponse({ encoding: "base64" }),
-		);
+		const mock = vi.fn(async () => jsonResponse({ encoding: "base64" }));
 		vi.stubGlobal("fetch", mock);
 		const { createGitHubClient } = await import("../github");
 		const gh = createGitHubClient(TOKEN);

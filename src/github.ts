@@ -53,6 +53,23 @@ function decodeBase64Utf8(b64: string): string {
 }
 
 export function createGitHubClient(token: string): GitHubClient {
+	const defaultBranchCache = new Map<string, string>();
+
+	async function resolveDefaultBranch(
+		owner: string,
+		repo: string,
+	): Promise<string> {
+		const key = `${owner}/${repo}`;
+		const cached = defaultBranchCache.get(key);
+		if (cached) return cached;
+		const data = await getJson<{ default_branch?: string }>(
+			`${GITHUB_API}/repos/${owner}/${repo}`,
+		);
+		const branch = data.default_branch ?? "main";
+		defaultBranchCache.set(key, branch);
+		return branch;
+	}
+
 	async function request(url: string, init?: RequestInit): Promise<Response> {
 		const headers = { ...authHeaders(token), ...(init?.headers ?? {}) };
 		const res = await fetch(url, { ...init, headers });
@@ -69,14 +86,16 @@ export function createGitHubClient(token: string): GitHubClient {
 	}
 
 	return {
-		async getRepoTree(owner, repo, branch = "main"): Promise<RepoTree> {
-			const url = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${branch}`;
+		async getRepoTree(owner, repo, branch?): Promise<RepoTree> {
+			const ref = branch ?? (await resolveDefaultBranch(owner, repo));
+			const url = `${GITHUB_API}/repos/${owner}/${repo}/git/trees/${ref}`;
 			const data = await getJson<{ tree: { path: string }[] }>(url);
 			return data.tree.map((entry) => entry.path);
 		},
 
-		async getFileContent(owner, repo, path, branch = "main"): Promise<string> {
-			const url = `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+		async getFileContent(owner, repo, path, branch?): Promise<string> {
+			const base = `${GITHUB_API}/repos/${owner}/${repo}/contents/${path}`;
+			const url = branch ? `${base}?ref=${branch}` : base;
 			const data = await getJson<{ content?: string; encoding?: string }>(url);
 			if (!data.content || data.encoding !== "base64") return "";
 			const decoded = decodeBase64Utf8(data.content);
