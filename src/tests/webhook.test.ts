@@ -1,11 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import {
-	extractContext,
-	isRelevantEvent,
-	verifySignature,
-	type WebhookContext,
-} from "../src/webhook.ts";
+import { extractTicket, type TicketContext, verifySignature } from "../webhook";
 
 const SECRET = "topsecret";
 
@@ -14,87 +9,113 @@ function sign(body: string, secret: string = SECRET): string {
 	return `sha256=${sig}`;
 }
 
-const COMMENT_BODY = JSON.stringify({
-	action: "created",
-	repository: {
-		full_name: "owner/repo",
-		name: "repo",
-		owner: { login: "owner" },
-	},
-	issue: { number: 3, title: "Login fails", body: "it broke" },
-	comment: {
-		body: "/issue the login button is broken",
-		user: { login: "alice" },
-		html_url: "https://example/c/3",
+const FULL_PAYLOAD = JSON.stringify({
+	repo: "owner/repo",
+	requester: { name: "Alice", email: "alice@example.com" },
+	payload: {
+		descricao: "The login button is broken",
+		url_atual: "https://app.example.com/login",
+		categoria: "bug",
+		contexto_da_sessao: "User was on Chrome 120",
+		logs_do_console: "TypeError: cannot read 'addEventListener'",
+		logs_de_rede: "POST /api/login 500",
+		screenshot: "https://cdn.example.com/shot.png",
 	},
 });
 
 describe("verifySignature", () => {
 	it("accepts a valid HMAC signature", () => {
-		const raw = Buffer.from(COMMENT_BODY);
-		expect(verifySignature(raw, sign(COMMENT_BODY), SECRET)).toBe(true);
+		const raw = Buffer.from(FULL_PAYLOAD);
+		expect(verifySignature(raw, sign(FULL_PAYLOAD), SECRET)).toBe(true);
 	});
 
 	it("rejects a divergent signature", () => {
-		const raw = Buffer.from(COMMENT_BODY);
+		const raw = Buffer.from(FULL_PAYLOAD);
 		expect(verifySignature(raw, "sha256=deadbeef", SECRET)).toBe(false);
 	});
 
 	it("rejects a missing signature", () => {
-		expect(verifySignature(Buffer.from(COMMENT_BODY), "", SECRET)).toBe(false);
+		expect(verifySignature(Buffer.from(FULL_PAYLOAD), "", SECRET)).toBe(false);
 	});
 
 	it("rejects when secret differs", () => {
-		const raw = Buffer.from(COMMENT_BODY);
-		expect(verifySignature(raw, sign(COMMENT_BODY, "other"), SECRET)).toBe(
+		const raw = Buffer.from(FULL_PAYLOAD);
+		expect(verifySignature(raw, sign(FULL_PAYLOAD, "other"), SECRET)).toBe(
 			false,
 		);
 	});
-
-	it("uses timing-safe comparison", () => {
-		const raw = Buffer.from(COMMENT_BODY);
-		expect(verifySignature(raw, sign(COMMENT_BODY), SECRET)).toBe(true);
-	});
 });
 
-describe("isRelevantEvent", () => {
-	it("returns true for issue_comment created", () => {
-		expect(isRelevantEvent("issue_comment", { action: "created" })).toBe(true);
-	});
-
-	it("returns false for edited comments", () => {
-		expect(isRelevantEvent("issue_comment", { action: "edited" })).toBe(false);
-	});
-
-	it("returns false for other events", () => {
-		expect(isRelevantEvent("push", { action: "created" })).toBe(false);
-	});
-});
-
-describe("extractContext", () => {
-	it("extracts owner, repo, comment and issue fields", () => {
-		const ctx = extractContext(JSON.parse(COMMENT_BODY));
+describe("extractTicket", () => {
+	it("extracts all fields from a full payload", () => {
+		const ctx = extractTicket(JSON.parse(FULL_PAYLOAD)) as TicketContext;
 		expect(ctx.owner).toBe("owner");
 		expect(ctx.repo).toBe("repo");
-		expect(ctx.commentUser).toBe("alice");
-		expect(ctx.issueNumber).toBe(3);
-		expect(ctx.issueTitle).toBe("Login fails");
-		expect(ctx.commentBody).toContain("/issue");
-		expect(ctx.commentUrl).toBe("https://example/c/3");
+		expect(ctx.requesterName).toBe("Alice");
+		expect(ctx.requesterEmail).toBe("alice@example.com");
+		expect(ctx.descricao).toBe("The login button is broken");
+		expect(ctx.urlAtual).toBe("https://app.example.com/login");
+		expect(ctx.categoria).toBe("bug");
+		expect(ctx.contextoSessao).toBe("User was on Chrome 120");
+		expect(ctx.logsConsole).toBe("TypeError: cannot read 'addEventListener'");
+		expect(ctx.logsRede).toBe("POST /api/login 500");
+		expect(ctx.screenshot).toBe("https://cdn.example.com/shot.png");
 	});
 
-	it("matches the trigger prefix when configured", () => {
-		const ctx: WebhookContext = extractContext(JSON.parse(COMMENT_BODY));
-		expect(ctx.matchesTrigger("/issue")).toBe(true);
+	it("works with only mandatory fields (descricao + repo)", () => {
+		const ctx = extractTicket({
+			repo: "org/project",
+			payload: { descricao: "something is wrong" },
+		}) as TicketContext;
+		expect(ctx.owner).toBe("org");
+		expect(ctx.repo).toBe("project");
+		expect(ctx.descricao).toBe("something is wrong");
+		expect(ctx.urlAtual).toBeUndefined();
+		expect(ctx.categoria).toBeUndefined();
 	});
 
-	it("does not match a different trigger prefix", () => {
-		const ctx: WebhookContext = extractContext(JSON.parse(COMMENT_BODY));
-		expect(ctx.matchesTrigger("/bug")).toBe(false);
+	it("returns null when repo is missing", () => {
+		expect(extractTicket({ payload: { descricao: "x" } })).toBeNull();
 	});
 
-	it("always matches when no trigger prefix is set", () => {
-		const ctx: WebhookContext = extractContext(JSON.parse(COMMENT_BODY));
-		expect(ctx.matchesTrigger(undefined)).toBe(true);
+	it("returns null when repo format is invalid", () => {
+		expect(
+			extractTicket({ repo: "invalid", payload: { descricao: "x" } }),
+		).toBeNull();
+		expect(
+			extractTicket({ repo: "a/b/c", payload: { descricao: "x" } }),
+		).toBeNull();
+	});
+
+	it("returns null when descricao is missing", () => {
+		expect(extractTicket({ repo: "owner/repo", payload: {} })).toBeNull();
+	});
+
+	it("returns null when descricao is empty", () => {
+		expect(
+			extractTicket({ repo: "owner/repo", payload: { descricao: "   " } }),
+		).toBeNull();
+	});
+
+	it("handles missing requester gracefully", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			payload: { descricao: "test" },
+		}) as TicketContext;
+		expect(ctx.requesterName).toBe("");
+		expect(ctx.requesterEmail).toBe("");
+	});
+
+	it("treats empty optional strings as undefined", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			payload: {
+				descricao: "test",
+				url_atual: "   ",
+				categoria: "",
+			},
+		}) as TicketContext;
+		expect(ctx.urlAtual).toBeUndefined();
+		expect(ctx.categoria).toBeUndefined();
 	});
 });

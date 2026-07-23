@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GitHubClient } from "../src/github.ts";
-import type { LlmClient, ToolCall } from "../src/llm.ts";
+import type { GitHubClient } from "../github";
+import type { LlmClient, ToolCall } from "../llm";
 
 function mockGitHub(): GitHubClient {
 	return {
@@ -28,10 +28,9 @@ function scriptLlm(script: ToolCall[][]): LlmClient {
 const BASE_INPUT = {
 	owner: "owner",
 	repo: "repo",
-	commentBody: "please create an issue for the bug in login",
-	commentUser: "alice",
-	issue: { number: 3, title: "Login fails", body: "it broke" },
-	commentUrl: "https://example/comment/3",
+	requesterName: "Alice",
+	requesterEmail: "alice@example.com",
+	descricao: "please create an issue for the bug in login",
 };
 
 describe("llm.generateIssue", () => {
@@ -45,15 +44,15 @@ describe("llm.generateIssue", () => {
 				},
 			],
 		]);
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT);
-		expect(proposal.title).toBe("Bug");
-		expect(proposal.labels).toEqual(["bug"]);
+		expect(proposal?.title).toBe("Bug");
+		expect(proposal?.labels).toEqual(["bug"]);
 	});
 
 	it("returns null when the model never calls submit_issue", async () => {
 		const llm = scriptLlm([[{ name: "list_files", arguments: {} }]]);
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 2,
 		});
@@ -67,7 +66,7 @@ describe("llm.generateIssue", () => {
 				content: null,
 			})),
 		};
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 3,
 		});
@@ -81,23 +80,23 @@ describe("llm.generateIssue", () => {
 				throw new Error("boom");
 			}),
 		};
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		await expect(generateIssue(llm, mockGitHub(), BASE_INPUT)).rejects.toThrow(
 			"boom",
 		);
 	});
 
-	it("includes the user comment and issue context in the system prompt", async () => {
+	it("includes the requester and description in the system prompt", async () => {
 		const llm = scriptLlm([
 			[{ name: "submit_issue", arguments: { title: "t", body: "b" } }],
 		]);
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		await generateIssue(llm, mockGitHub(), BASE_INPUT);
 		expect(llm.chat).toHaveBeenCalled();
 		const firstCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
 		const systemText = JSON.stringify(firstCall?.messages ?? []);
-		expect(systemText).toContain("alice");
-		expect(systemText).toContain("Login fails");
+		expect(systemText).toContain("Alice");
+		expect(systemText).toContain("please create an issue for the bug in login");
 	});
 
 	it("calls onDebug with LLM responses and tool dispatches", async () => {
@@ -111,7 +110,7 @@ describe("llm.generateIssue", () => {
 			],
 		]);
 		const onDebug = vi.fn();
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		await generateIssue(llm, mockGitHub(), BASE_INPUT, { onDebug });
 
 		const calls = onDebug.mock.calls.map(([msg]) => msg);
@@ -129,7 +128,7 @@ describe("llm.generateIssue", () => {
 	it("calls onDebug when no tool calls are returned", async () => {
 		const llm = scriptLlm([[]]);
 		const onDebug = vi.fn();
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		await generateIssue(llm, mockGitHub(), BASE_INPUT, { onDebug });
 		expect(onDebug).toHaveBeenCalledWith(
 			"no tool calls, ending loop",
@@ -145,7 +144,7 @@ describe("llm.generateIssue", () => {
 			})),
 		};
 		const onDebug = vi.fn();
-		const { generateIssue } = await import("../src/llm.ts");
+		const { generateIssue } = await import("../llm");
 		await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 2,
 			onDebug,

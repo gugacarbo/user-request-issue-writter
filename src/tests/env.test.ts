@@ -31,7 +31,6 @@ const FULL: RawEnv = {
 	LLM_API_KEY: "sk-x",
 	LLM_MODEL: "gpt-4o-mini",
 	LOG_LEVEL: "debug",
-	TRIGGER_PREFIX: "/issue",
 };
 
 describe("env", () => {
@@ -47,7 +46,7 @@ describe("env", () => {
 	});
 
 	it("loads a fully provided env as a typed object", async () => {
-		const { env } = await import("../src/env.ts");
+		const { env } = await import("../env");
 		expect(env.PORT).toBe(9090);
 		expect(env.WEBHOOK_SECRET).toBe("shh");
 		expect(env.GITHUB_TOKEN).toBe("ghp_x");
@@ -55,40 +54,33 @@ describe("env", () => {
 		expect(env.LLM_API_KEY).toBe("sk-x");
 		expect(env.LLM_MODEL).toBe("gpt-4o-mini");
 		expect(env.LOG_LEVEL).toBe("debug");
-		expect(env.TRIGGER_PREFIX).toBe("/issue");
 	});
 
 	it("applies PORT and LOG_LEVEL defaults when omitted", async () => {
 		delete process.env.PORT;
 		delete process.env.LOG_LEVEL;
-		const { env } = await import("../src/env.ts");
+		const { env } = await import("../env");
 		expect(env.PORT).toBe(8080);
 		expect(env.LOG_LEVEL).toBe("info");
 	});
 
-	it("treats TRIGGER_PREFIX as optional (undefined when empty)", async () => {
-		delete process.env.TRIGGER_PREFIX;
-		const { env } = await import("../src/env.ts");
-		expect(env.TRIGGER_PREFIX).toBeUndefined();
-	});
-
 	it("throws when WEBHOOK_SECRET is missing", async () => {
 		delete process.env.WEBHOOK_SECRET;
-		await expect(import("../src/env.ts")).rejects.toThrow(/WEBHOOK_SECRET/i);
+		await expect(import("../env")).rejects.toThrow(/WEBHOOK_SECRET/i);
 	});
 
 	it("throws when GITHUB_TOKEN is missing", async () => {
 		delete process.env.GITHUB_TOKEN;
-		await expect(import("../src/env.ts")).rejects.toThrow(/GITHUB_TOKEN/i);
+		await expect(import("../env")).rejects.toThrow(/GITHUB_TOKEN/i);
 	});
 
 	it("throws when LLM_API_KEY is missing", async () => {
 		delete process.env.LLM_API_KEY;
-		await expect(import("../src/env.ts")).rejects.toThrow(/LLM_API_KEY/i);
+		await expect(import("../env")).rejects.toThrow(/LLM_API_KEY/i);
 	});
 
 	it("throws when PORT is not a number", async () => {
 		process.env.PORT = "not-a-port";
-		await expect(import("../src/env.ts")).rejects.toThrow(/PORT/i);
+		await expect(import("../env")).rejects.toThrow(/PORT/i);
 	});
 });

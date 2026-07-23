@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GitHubClient } from "../src/github.ts";
+import type { GitHubClient } from "../github";
 
 function mockGitHub(overrides: Partial<GitHubClient> = {}): GitHubClient {
 	return {
@@ -17,7 +17,7 @@ function mockGitHub(overrides: Partial<GitHubClient> = {}): GitHubClient {
 
 describe("tools", () => {
 	it("exports JSON schemas for all tools", async () => {
-		const { toolSchemas } = await import("../src/tools.ts");
+		const { toolSchemas } = await import("../tools");
 		const names = toolSchemas.map((t) => t.function.name);
 		expect(names).toEqual([
 			"list_files",
@@ -30,7 +30,7 @@ describe("tools", () => {
 
 	it("list_files dispatcher calls github.getRepoTree", async () => {
 		const gh = mockGitHub();
-		const { dispatchTool } = await import("../src/tools.ts");
+		const { dispatchTool } = await import("../tools");
 		const result = await dispatchTool(
 			"list_files",
 			{ path: "" },
@@ -47,7 +47,7 @@ describe("tools", () => {
 
 	it("read_file dispatcher calls github.getFileContent", async () => {
 		const gh = mockGitHub();
-		const { dispatchTool } = await import("../src/tools.ts");
+		const { dispatchTool } = await import("../tools");
 		const result = await dispatchTool(
 			"read_file",
 			{ path: "src/index.ts" },
@@ -67,7 +67,7 @@ describe("tools", () => {
 
 	it("get_repo_info dispatcher calls github.getRepoInfo", async () => {
 		const gh = mockGitHub();
-		const { dispatchTool } = await import("../src/tools.ts");
+		const { dispatchTool } = await import("../tools");
 		const result = await dispatchTool("get_repo_info", {}, gh, "owner", "repo");
 		expect(gh.getRepoInfo).toHaveBeenCalledWith("owner", "repo");
 		expect(result.isTerminal).toBe(false);
@@ -79,7 +79,7 @@ describe("tools", () => {
 
 	it("submit_issue is terminal: does not call github and returns structured args", async () => {
 		const gh = mockGitHub();
-		const { dispatchTool } = await import("../src/tools.ts");
+		const { dispatchTool } = await import("../tools");
 		const proposal = { title: "Bug", body: "desc", labels: ["bug"] };
 		const result = await dispatchTool(
 			"submit_issue",
@@ -94,7 +94,7 @@ describe("tools", () => {
 
 	it("dispatchTool throws on unknown tool name", async () => {
 		const gh = mockGitHub();
-		const { dispatchTool } = await import("../src/tools.ts");
+		const { dispatchTool } = await import("../tools");
 		await expect(dispatchTool("nope", {}, gh, "owner", "repo")).rejects.toThrow(
 			/unknown tool/i,
 		);

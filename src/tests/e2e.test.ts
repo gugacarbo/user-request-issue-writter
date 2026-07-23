@@ -9,9 +9,13 @@ import {
 	it,
 	vi,
 } from "vitest";
-import type { CreateIssueResult, GitHubClient } from "../src/github.ts";
-import { createOpenAiLlmClient } from "../src/openai.ts";
-import { buildServer, type ServerDeps } from "../src/server.ts";
+import type { CreateIssueResult, GitHubClient } from "../github";
+import { createOpenAiLlmClient } from "../openai";
+import { buildServer, type ServerDeps } from "../server";
+
+vi.mock("../allowlist", () => ({
+	isRepoAllowed: vi.fn(() => true),
+}));
 
 const WEBHOOK_SECRET = "e2e-test-secret";
 
@@ -89,7 +93,6 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 				model: llmEnv.model,
 			}),
 			webhookSecret: WEBHOOK_SECRET,
-			triggerPrefix: undefined,
 			logger: { level: process.env.LOG_LEVEL ?? "info" },
 		};
 		const server = buildServer(deps);
@@ -101,45 +104,37 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		createdIssue = null;
 	});
 
 	function sign(body: string): string {
 		return `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex")}`;
 	}
 
-	function commentBody(
+	function ticketBody(
 		overrides: Partial<Record<string, unknown>> = {},
 	): string {
 		return JSON.stringify({
-			action: "created",
-			repository: {
-				full_name: "owner/repo",
-				name: "repo",
-				owner: { login: "owner" },
-			},
-			issue: {
-				number: 5,
-				title: "Login button does nothing",
-				body: "When I click login nothing happens",
-			},
-			comment: {
-				body: "The login button is broken. When I click it, nothing happens. Please create an issue to investigate the login function in src/login.ts.",
-				user: { login: "bob" },
-				html_url: "https://github.com/owner/repo/issues/5#issuecomment-1",
+			repo: "owner/repo",
+			requester: { name: "Bob", email: "bob@example.com" },
+			payload: {
+				descricao:
+					"The login button is broken. When I click it, nothing happens. Please create an issue to investigate the login function in src/login.ts.",
+				url_atual: "https://app.example.com/login",
+				categoria: "bug",
 			},
 			...overrides,
 		});
 	}
 
 	it("receives 202 and the LLM drafts an issue via real function calling", async () => {
-		const body = commentBody();
+		const body = ticketBody();
 		const res = await fetch(`${baseUrl}/webhook/github`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-github-event": "issue_comment",
 				"x-hub-signature-256": sign(body),
-				"x-github-delivery": "e2e-001",
+				"x-delivery-id": "e2e-001",
 			},
 			body,
 		});
@@ -159,36 +154,36 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 		expect(createdIssue.owner).toBe("owner");
 		expect(createdIssue.repo).toBe("repo");
 		expect(createdIssue.title.length).toBeGreaterThan(3);
-		expect(createdIssue.body).toContain("bob");
-		expect(createdIssue.body).toContain(
-			"https://github.com/owner/repo/issues/5#issuecomment-1",
-		);
+		expect(createdIssue.body).toContain("Bob");
+		expect(createdIssue.body).toContain("bob@example.com");
 	}, 90_000);
 
-	it("ignored event returns 200", async () => {
-		const body = commentBody({ action: "deleted" });
+	it("returns 400 when descricao is missing", async () => {
+		const body = JSON.stringify({
+			repo: "owner/repo",
+			requester: { name: "Bob", email: "bob@example.com" },
+			payload: {},
+		});
 		const res = await fetch(`${baseUrl}/webhook/github`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-github-event": "issue_comment",
 				"x-hub-signature-256": sign(body),
-				"x-github-delivery": "e2e-002",
+				"x-delivery-id": "e2e-002",
 			},
 			body,
 		});
-		expect(res.status).toBe(200);
+		expect(res.status).toBe(400);
 	});
 
 	it("dryRun=true returns the drafted issue without creating it on GitHub", async () => {
-		const body = commentBody();
+		const body = ticketBody();
 		const res = await fetch(`${baseUrl}/webhook/github?dryRun=true`, {
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-github-event": "issue_comment",
 				"x-hub-signature-256": sign(body),
-				"x-github-delivery": "e2e-003",
+				"x-delivery-id": "e2e-003",
 			},
 			body,
 		});
@@ -198,25 +193,19 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 			dryRun: boolean;
 			delivery: string;
 			repo: { owner: string; name: string };
-			comment: { user: string; body: string; url: string };
-			sourceIssue: { number: number; title: string };
+			requester: { name: string; email: string };
+			descricao: string;
 			issue: { title: string; body: string; labels?: string[] };
 		};
 
 		expect(json.dryRun).toBe(true);
 		expect(json.delivery).toBe("e2e-003");
 		expect(json.repo).toEqual({ owner: "owner", name: "repo" });
-		expect(json.comment.user).toBe("bob");
-		expect(json.comment.url).toBe(
-			"https://github.com/owner/repo/issues/5#issuecomment-1",
-		);
-		expect(json.sourceIssue.number).toBe(5);
-		expect(json.sourceIssue.title).toBe("Login button does nothing");
+		expect(json.requester.name).toBe("Bob");
+		expect(json.requester.email).toBe("bob@example.com");
 		expect(json.issue.title.length).toBeGreaterThan(3);
-		expect(json.issue.body).toContain("bob");
-		expect(json.issue.body).toContain(
-			"https://github.com/owner/repo/issues/5#issuecomment-1",
-		);
+		expect(json.issue.body).toContain("Bob");
+		expect(json.issue.body).toContain("bob@example.com");
 
 		expect(mockGitHub.createIssue).not.toHaveBeenCalled();
 	}, 90_000);
