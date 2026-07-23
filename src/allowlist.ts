@@ -8,7 +8,11 @@ function loadAllowlist(): Set<string> {
 	try {
 		const data = readFileSync(join(__dirname, "..", "repos.json"), "utf8");
 		return new Set(JSON.parse(data) as string[]);
-	} catch {
+	} catch (error) {
+		console.warn(
+			`[allowlist] failed to load repos.json: ${(error as Error).message}. ` +
+				"No repositories will be allowed until the file is available.",
+		);
 		return new Set();
 	}
 }

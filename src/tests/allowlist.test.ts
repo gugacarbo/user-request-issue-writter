@@ -42,7 +42,12 @@ describe("allowlist", () => {
 		vi.mocked(readFileSync).mockImplementation(() => {
 			throw new Error("ENOENT");
 		});
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const { isRepoAllowed } = await import("../allowlist");
 		expect(isRepoAllowed("owner/repo")).toBe(false);
+		expect(warn).toHaveBeenCalledWith(
+			expect.stringContaining("failed to load repos.json"),
+		);
+		warn.mockRestore();
 	});
 });
