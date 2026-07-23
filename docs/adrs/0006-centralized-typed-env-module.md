@@ -6,7 +6,7 @@ Accepted
 ## Context
 O servidor depende de várias variáveis de ambiente obrigatórias
 (`WEBHOOK_SECRET`, `GITHUB_TOKEN`, `LLM_BASE_URL`, `LLM_API_KEY`,
-`LLM_MODEL`) e opcionais/com default (`PORT`, `LOG_LEVEL`, `TRIGGER_PREFIX`).
+`LLM_MODEL`) e opcionais/com default (`PORT`, `LOG_LEVEL`).
 Ler `process.env` espalhado pelos módulos gera:
 
 - strings não validadas propagadas pelo código (bugs em runtime, não em boot);

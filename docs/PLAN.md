@@ -1,5 +1,10 @@
 # Plano: Servidor Webhook → LLM → Issue GitHub
 
+> **Nota:** este documento descreve o plano original (modelo de webhook
+> `issue_comment` do GitHub). O sistema evoluiu para um **ticket custom**
+> assinado com HMAC; consulte o `README.md` para o fluxo atual e
+> `docs/adrs/` para as decisões vigentes.
+
 ## Resumo
 Servidor Node.js/Fastify (TypeScript) para VPS que recebe webhooks
 `issue_comment` do GitHub, valida a assinatura HMAC, usa um LLM (API

@@ -9,7 +9,7 @@ Cada ADR registra contexto, decisão, consequências e alternativas consideradas
 | --- | --- | --- |
 | [0001](0001-fastify-as-web-framework.md) | Fastify como web framework | Accepted |
 | [0002](0002-raw-fetch-over-sdks.md) | `fetch` direto em vez de SDKs de GitHub/LLM | Accepted |
-| [0003](0003-202-async-with-in-memory-dedupe.md) | Resposta 202 + dedupe em memória por delivery | Accepted |
+| [0003](0003-202-async-with-in-memory-dedupe.md) | Resposta 202 + dedupe em memória por hash do corpo | Accepted |
 | [0004](0004-llm-function-calling-tool-loop.md) | Loop de function calling com `submit_issue` terminal | Accepted |
 | [0005](0005-read-repo-via-github-api-no-clone.md) | Ler repo via GitHub API, nunca clonar | Accepted |
 | [0006](0006-centralized-typed-env-module.md) | Env centralizado e tipado em `src/env.ts` | Accepted |

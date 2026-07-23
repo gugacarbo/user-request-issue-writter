@@ -1,9 +1,10 @@
 # user-request-issue-writter
 
 Servidor Node.js/Fastify (TypeScript) para VPS que recebe webhooks
-`issue_comment` do GitHub, valida a assinatura HMAC, usa um LLM
-(OpenAI-compatible) com *function calling* para analisar o repositório sob
-demanda, e cria uma issue no GitHub a partir do comentário.
+com assinatura HMAC (formato GitHub: `x-hub-signature-256`), valida a
+assinatura, usa um LLM (OpenAI-compatible) com *function calling* para
+analisar o repositório sob demanda, e cria uma issue no GitHub a partir
+do ticket enviado.
 
 Consulte [`PLAN.md`](PLAN.md) e [`docs/adrs/`](docs/adrs/README.md) para o
 detalhamento de arquitetura.
@@ -28,19 +29,45 @@ Copie `.env.example` para `.env` e preencha:
 | `LLM_BASE_URL` | sim | — | Ex.: `https://api.openai.com/v1` |
 | `LLM_API_KEY` | sim | — | Chave da API LLM |
 | `LLM_MODEL` | sim | — | Ex.: `gpt-4o-mini` |
-| `TRIGGER_PREFIX` | não | vazio | Se definido (ex.: `/issue`), só processa comentários com esse prefixo |
 | `LOG_LEVEL` | não | `info` | Nível do pino |
 
-## Configurando o webhook GitHub
+## Enviando um ticket
 
-1. Crie um PAT GitHub com escopo `repo`.
-2. No repositório, em **Settings → Webhooks → Add webhook**:
-   - **Payload URL**: `http://VPS:PORT/webhook/github`
-   - **Content type**: `application/json`
-   - **Secret**: o valor de `WEBHOOK_SECRET`
-   - **Events**: `Issue comments`
-3. (Opcional) Defina `TRIGGER_PREFIX=/issue` para só processar comentários
-   que comecem com `/issue`.
+O endpoint `POST /webhook/github` recebe um JSON com um **ticket** (não o
+payload nativo de `issue_comment` do GitHub) e exige a assinatura HMAC
+SHA256 no header `X-Hub-Signature-256`, no mesmo formato que o GitHub usa.
+
+Formato do corpo:
+
+```json
+{
+  "repo": "owner/repo",
+  "requester": { "name": "Alice", "email": "alice@example.com" },
+  "payload": {
+    "descricao": "The login button is broken.",
+    "url_atual": "https://app.example.com/login",
+    "categoria": "bug",
+    "contexto_da_sessao": "Chrome 120 on macOS",
+    "logs_do_console": "TypeError: ...",
+    "logs_de_rede": "POST /api/login 500",
+    "screenshot": "https://..."
+  }
+}
+```
+
+Somente `repo` (no formato `owner/repo`) e `payload.descricao` são
+obrigatórios; os demais campos são opcionais e enriquecem o contexto
+enviado ao LLM. O `repo` precisa estar no allowlist (`repos.json`).
+
+Para assinar (ex.: com o `WEBHOOK_SECRET`):
+
+```sh
+printf '%s' '<compact-json>' | openssl dgst -sha256 -hmac "seu-webhook-secret"
+# header: X-Hub-Signature-256: sha256=<hex>
+```
+
+Exemplos prontos (com segredo `dev-secret-changeme`) estão em
+`requests.http`.
 
 ## Como rodar
 
@@ -75,15 +102,17 @@ curl http://localhost:8080/health
 
 ## Fluxo
 
-1. `POST /webhook/github` chega GitHub.
+1. `POST /webhook/github` chega com um ticket assinado.
 2. Valida assinatura HMAC (`timingSafeEqual`); 401 se divergir.
-3. Filtra `X-GitHub-Event === 'issue_comment'` e `action === 'created'`.
-4. Aplica `TRIGGER_PREFIX` se configurado.
-5. Responde **202** imediatamente e processa em background.
-6. Loop de function calling do LLM (`list_files`, `read_file`,
+3. Faz parse do JSON e extrai `repo` + `payload.descricao`; 400/422 se inválido.
+4. Verifica se o `repo` está no allowlist (`repos.json`); 403 se não estiver.
+5. Deduplica por **hash SHA-256 do corpo** (em memória, TTL ~10 min).
+6. Responde **202** imediatamente e processa em background
+   (`?dryRun=true` executa de forma síncrona e devolve a proposta sem criar).
+7. Loop de function calling do LLM (`list_files`, `read_file`,
    `get_repo_info`) até chamar `submit_issue`.
-7. Cria a issue via GitHub API (com fallback de labels se 422).
-8. Loga o resultado via pino.
+8. Cria a issue via GitHub API (com fallback de labels se 422).
+9. Loga o resultado via pino.
 
 ## Scripts
 
@@ -101,8 +130,8 @@ pnpm run knip       # análise de código morto
 ## Notas operacionais
 
 - O GitHub reenvia webhooks em caso de timeout/falha. O servidor responde
-  202 cedo e deduplica por `X-GitHub-Delivery` (em memória, TTL ~10 min) para
-  evitar issues duplicadas. Veja
+  202 cedo e deduplica por **hash SHA-256 do corpo da requisição** (em
+  memória, TTL ~10 min) para evitar issues duplicadas. Veja
   [ADR-0003](docs/adrs/0003-202-async-with-in-memory-dedupe.md).
 - O servidor nunca clona repositórios: lê via GitHub API com o PAT. Veja
   [ADR-0005](docs/adrs/0005-read-repo-via-github-api-no-clone.md).
