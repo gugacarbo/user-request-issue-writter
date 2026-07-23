@@ -1,0 +1,62 @@
+#!/bin/sh
+# casa-update-check — compara o contrato CASA declarado no router com o vigente na
+# origem e mantém UMA issue de aviso no tracker do repo (ADR-0016, SPEC-0008).
+#
+# Roda AGENDADO no CI do host (workflow casa-update-check.yml) — nunca no gate:
+# rede aqui é aceitável e falha aqui nunca bloqueia ninguém (exit 0 sempre que o
+# mundo externo falhar; quem cobra a integridade do router é o docs-check).
+#
+# Uso: sh scripts/casa-update-check [root]
+# Requer: curl e gh autenticado (GITHUB_TOKEN no Actions). Fonte da versão vigente
+# sobrescrevível por CASA_SOURCE_URL (teste/fork).
+set -u
+ROOT="${1:-.}"
+LABEL="casa-update"
+SOURCE_URL="${CASA_SOURCE_URL:-https://raw.githubusercontent.com/atplus-digital/casa-standard/main/CHANGELOG.md}"
+
+[ -d "$ROOT" ] || { echo "casa-update-check: root inexistente: $ROOT"; exit 2; }
+
+declared=$(sed -n 's/^casa-version: *\([0-9][0-9.]*\).*/\1/p' "$ROOT/AGENTS.md" 2>/dev/null | head -1)
+if [ -z "$declared" ]; then
+    echo "casa-version ilegível em AGENTS.md — o docs-check é quem cobra o router; nada a fazer."
+    exit 0
+fi
+
+latest=$(curl -fsSL --max-time 20 "$SOURCE_URL" 2>/dev/null | sed -n 's/^## CASA \([0-9][0-9.]*\).*/\1/p' | head -1)
+if [ -z "$latest" ]; then
+    echo "não consegui ler a versão vigente em $SOURCE_URL — tento na próxima janela."
+    exit 0
+fi
+
+echo "contrato declarado: $declared · vigente: $latest"
+newer=$(printf '%s\n%s\n' "$declared" "$latest" | sort -V | tail -1)
+
+if [ "$declared" = "$latest" ] || [ "$newer" = "$declared" ]; then
+    # em dia (ou à frente — julgar não é papel deste job): fecha aviso aberto, se houver
+    for n in $(gh issue list --label "$LABEL" --state open --json number --jq '.[].number' 2>/dev/null); do
+        gh issue close "$n" --comment "Contrato em dia ($declared). Fechado pelo casa-update-check." \
+            && echo "issue #$n fechada (repo alcançou o contrato vigente)."
+    done
+    echo "em dia."
+    exit 0
+fi
+
+TITLE="CASA desatualizado: declarado $declared, vigente $latest"
+BODY="O contrato CASA vigente é **$latest** e este repo declara **casa-version: $declared**.
+
+1. Atualize a toolchain: \`scripts/casa-init <este-repo>\` de um clone atual do casa-standard — ou, sem clone, \`curl -fsSL https://raw.githubusercontent.com/atplus-digital/casa-standard/main/install.sh | sh\`.
+2. Leia o \`CHANGELOG.md\` do casa-standard entre $declared e $latest.
+3. Quando o repo cumprir o contrato novo, atualize \`casa-version\` no \`AGENTS.md\` — a declaração é promessa do repo e o casa-init não a toca (ADR-0010); até lá o docs-check avisa a diferença.
+
+_Aviso automático do casa-update-check (ADR-0016 do casa-standard). Esta issue é editada enquanto o repo estiver atrás e fecha sozinha quando alcançar._"
+
+gh label create "$LABEL" --color BFD4F2 --description "aviso automático do casa-update-check (ADR-0016)" 2>/dev/null || true
+existing=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number' 2>/dev/null)
+if [ -n "$existing" ]; then
+    gh issue edit "$existing" --title "$TITLE" --body "$BODY" >/dev/null 2>&1 \
+        && echo "issue #$existing atualizada: $TITLE"
+else
+    gh issue create --title "$TITLE" --body "$BODY" --label "$LABEL" 2>/dev/null \
+        && echo "issue criada: $TITLE"
+fi
+exit 0

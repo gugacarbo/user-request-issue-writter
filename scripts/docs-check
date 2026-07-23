@@ -1,0 +1,536 @@
+#!/usr/bin/env python3
+"""
+docs-check — implementação de referência do CASA Standard (STANDARD.md §8).
+
+Uso:
+  scripts/docs-check [--root .] [--emit-index] [--warn-only]
+  scripts/docs-check --check-adr-immutability --base-ref origin/main
+
+O que faz:
+  1. Valida o router AGENTS.md: metadados CASA, DoD global, ponteiros de contexto e o
+     invariante de capítulo RECONHECIDO (TESTS.md declarado exige comando canônico — §4/§8).
+     Sinaliza (AVISO) casa-version incoerente com a toolchain (ADR-0010) e backlog em
+     docs/context/ (ADR-0011).
+  2. Lê docs/adr/*.md e docs/specs/*.md.
+  3. DERIVA id do filename (docs/adr/0032-x.md → ADR-0032) e title do primeiro
+     H1 do corpo (após o frontmatter; comentários HTML não contam).
+  4. Valida frontmatter: só o subconjunto YAML suportado (escalar, lista
+     inline, lista em bloco) — linha não reconhecida é ERRO, nunca ignorada;
+     campos obrigatórios (status, date), data de calendário real AAAA-MM-DD,
+     vocabulário de status por camada; campo fora do vocabulário → AVISO.
+  5. Valida grafo: builds-on/superseded-by resolvem (cross-repo vira AVISO);
+     sem auto-supersessão; superseded-by só em ADR; ADR superseded exige o
+     bloco "VERDADE ATUAL" real, fora de comentário HTML.
+  6. Valida Specs: accepted/implemented exige DoD real, sem questões abertas;
+     implemented exige implemented-by resolvendo para paths reais e "## Verificação"
+     preenchida (sem o placeholder do template).
+  7. Opcionalmente valida imutabilidade de ADR aceito contra --base-ref.
+  8. Higiene de árvore: ".orig", "conflicted copy" e ".DS_Store" sempre;
+     cópia numerada ("x 2.md", "x copy.md", "x (1).md") só quando o original
+     existe ao lado. Ignora .git, node_modules, .venv, dist, build e afins.
+  9. Índices frescos: compara os READMEs gerados (e docs/index.json, se
+     existir) com os commitados e FALHA se divergirem.
+     --emit-index regenera tudo.
+
+Exit: 1 se houver ERRO (default). --warn-only imprime tudo e sai 0 —
+só para a janela de adoção (STANDARD §10).
+
+Sem dependências externas.
+"""
+import argparse, json, os, re, subprocess, sys
+from datetime import datetime
+from pathlib import Path
+
+LAYERS = {"adr": "ADR", "specs": "SPEC"}
+STATUS_VOCAB = {
+    "adr":   {"proposed", "accepted", "deprecated", "superseded"},
+    "specs": {"draft", "accepted", "implemented", "deprecated"},
+}
+REQUIRED = {"status", "date"}
+KNOWN_KEYS = {"status", "date", "builds-on", "superseded-by", "implemented-by", "deciders",
+              "design-ref"}  # design-ref: referência de design NÃO-normativa (ADR-0014)
+ROUTER_REQUIRED = {"casa-repo-id", "casa-tier", "casa-version", "casa-standard-ref"}
+ROUTER_TIERS = {"T0", "T1"}
+# Versão do contrato CASA que ESTA toolchain implementa (ADR-0010). Deve ser idêntica à
+# CASA_VERSION do casa-init do mesmo snapshot — o test-casa-init guarda a sincronia.
+CONTRACT_VERSION = "1.8"
+# Capítulos de contexto RECONHECIDOS (registry FECHADO — STANDARD §4/§8): declarar o
+# ponteiro no router dispara um invariante de CONTEÚDO que mora aqui, no validador. O
+# gatilho é a DECLARAÇÃO no router, nunca a presença física do arquivo no disco; a regra
+# nunca é trazida pelo repo adotante. Estender o conjunto = ADR no casa-standard (ADR-0008).
+RECOGNIZED_CHAPTERS = {
+    "docs/context/TESTS.md": "TESTS",   # exige ao menos um comando canônico de teste
+}
+IGNORED_DIRS = {".git", "node_modules", ".venv", "venv", "dist", "build",
+                "vendor", "__pycache__", ".next", "target", ".tox",
+                ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+TRASH_ALWAYS = [r"\.orig$", r"conflicted copy", r"^\.DS_Store$"]
+DUP_RE = re.compile(r"^(?P<base>.+?)(?: \d+| copy(?: \d+)?| \(\d+\))(?P<ext>\.\w+)$")
+FILENAME_RE = re.compile(r"^(\d{4})-[a-z0-9][a-z0-9-]*\.md$")
+KEY_RE = re.compile(r"^([A-Za-z][\w-]*):\s*(.*)$")
+ITEM_RE = re.compile(r"^\s*-\s+(.*)$")
+VA_RE = re.compile(r"^\s*>\s*(?:⚠️\s*)?VERDADE ATUAL", re.M)
+ROUTER_LINE_CAP = 150
+PLACEHOLDER = "(preencher no fechamento)"
+PLACEHOLDER_RE = re.compile(
+    # <token> de template começa com letra; evita falso-positivo em redireção de shell
+    # (2>&1, cmd < arq, here-doc <<EOF não casam).
+    r"<[A-Za-z][^>\n]*>|AAAA-MM-DD|\(preencher|preencher no fechamento|N/N verdes|comandos exatos",
+    re.I,
+)
+CODE_BLOCK_RE = re.compile(r"```[A-Za-z0-9_-]*\s*\n(.*?)\n```", re.S)
+
+
+def split_frontmatter(text):
+    """Retorna (frontmatter_cru, corpo) ou (None, texto) se não houver frontmatter."""
+    if not text.startswith("---"):
+        return None, text
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None, text
+    nl = text.find("\n", end + 1)
+    return text[3:end], (text[nl + 1:] if nl != -1 else "")
+
+
+def _strip_comment(v):
+    v = v.strip()
+    if v.startswith("#"):
+        return ""
+    return re.split(r"\s+#", v, maxsplit=1)[0].strip()
+
+
+def _clean(v):
+    return v.strip().strip("'\"")
+
+
+def parse_frontmatter(raw):
+    """Parser do subconjunto suportado: escalar, lista inline, lista em bloco.
+    Linha fora do subconjunto vira erro — nunca é ignorada em silêncio."""
+    fm, errs, pending = {}, [], None
+    for ln, line in enumerate(raw.splitlines(), start=2):  # linha 1 do arquivo é '---'
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        m = ITEM_RE.match(line)
+        if m:
+            if pending is None:
+                errs.append(f"frontmatter linha {ln}: item de lista sem chave correspondente")
+                continue
+            if fm[pending] is None:
+                fm[pending] = []
+            fm[pending].append(_clean(_strip_comment(m.group(1))))
+            continue
+        m = KEY_RE.match(line)
+        if not m:
+            errs.append(f"frontmatter linha {ln}: sintaxe não suportada: {stripped!r}")
+            pending = None
+            continue
+        key, val = m.group(1), _strip_comment(m.group(2))
+        pending = None
+        if val == "":
+            fm[key] = None          # vazio: null escalar, ou início de lista em bloco
+            pending = key
+        elif val.startswith("[") and val.endswith("]"):
+            inner = val[1:-1].strip()
+            fm[key] = [_clean(v) for v in inner.split(",")] if inner else []
+        elif val in ("null", "~"):
+            fm[key] = None
+        else:
+            fm[key] = _clean(val)
+    return fm, errs
+
+
+def first_h1(visible):
+    for line in visible.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return None
+
+
+def first_yaml_block(text):
+    m = re.search(r"```yaml\s*\n(.*?)\n```", text, flags=re.I | re.S)
+    return m.group(1) if m else None
+
+
+def section_body(visible, heading):
+    m = re.search(rf"^##\s+{re.escape(heading)}\s*$", visible, flags=re.M)
+    if not m:
+        return None
+    start = m.end()
+    nxt = re.search(r"^##\s+", visible[start:], flags=re.M)
+    end = start + nxt.start() if nxt else len(visible)
+    return visible[start:end]
+
+
+def executable_lines(section):
+    lines = []
+    for block in CODE_BLOCK_RE.findall(section or ""):
+        for line in block.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                lines.append(stripped)
+    return lines
+
+
+def has_placeholder(text):
+    return bool(PLACEHOLDER_RE.search(text or ""))
+
+
+def validate_recognized_chapter(root, ref_path, errors):
+    """Capítulo reconhecido declarado no router: aplica o invariante de conteúdo do registry
+    FECHADO (RECOGNIZED_CHAPTERS). Hoje só TESTS.md → exige um comando canônico, reusando o
+    mesmo critério do DoD global (executable_lines). A regra mora no validador, não no repo."""
+    label = RECOGNIZED_CHAPTERS.get(ref_path)
+    if label is None:
+        return
+    text = (root / ref_path).read_text(encoding="utf-8")
+    if not executable_lines(text):
+        errors.append(f"AGENTS.md: capítulo reconhecido {label} (`{ref_path}`) declarado no "
+                      "Mapa de contexto sem comando executável em bloco de código — liste o(s) "
+                      "comando(s) canônico(s) de teste ou remova o ponteiro (STANDARD §8)")
+
+
+def validate_router(root, errors, warnings):
+    router = root / "AGENTS.md"
+    if not router.exists():
+        errors.append("AGENTS.md ausente — router é obrigatório no CASA")
+        return
+
+    text = router.read_text(encoding="utf-8")
+    n = len(text.splitlines())
+    if n > ROUTER_LINE_CAP:
+        warnings.append(f"AGENTS.md com {n} linhas (teto ~{ROUTER_LINE_CAP}) — "
+                        "mova conteúdo para docs/context/")
+
+    raw = first_yaml_block(text)
+    if raw is None:
+        errors.append("AGENTS.md: sem bloco ```yaml``` com metadados CASA")
+        fm = {}
+    else:
+        fm, fm_errs = parse_frontmatter(raw)
+        errors.extend(f"AGENTS.md: {e}" for e in fm_errs)
+
+    missing = ROUTER_REQUIRED - {k for k, v in fm.items() if v is not None}
+    if missing:
+        errors.append(f"AGENTS.md: metadados CASA obrigatórios ausentes: {sorted(missing)}")
+
+    repo_id = fm.get("casa-repo-id")
+    if repo_id and ("<" in str(repo_id) or not re.match(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$", str(repo_id))):
+        errors.append("AGENTS.md: casa-repo-id inválido ou ainda com placeholder")
+
+    tier = fm.get("casa-tier")
+    if tier and tier not in ROUTER_TIERS:
+        errors.append(f"AGENTS.md: casa-tier inválido '{tier}' (válidos: {sorted(ROUTER_TIERS)})")
+
+    version = fm.get("casa-version")
+    if version and not re.match(r"^\d+\.\d+(?:\.\d+)?$", str(version)):
+        errors.append("AGENTS.md: casa-version deve ser semver simples (ex.: 1.1)")
+    elif version:
+        # Coerência declaração × toolchain (ADR-0010): aviso, nunca erro; (major, minor).
+        decl = tuple(int(p) for p in str(version).split("."))[:2]
+        tool = tuple(int(p) for p in CONTRACT_VERSION.split("."))[:2]
+        if decl < tool:
+            warnings.append(
+                f"AGENTS.md: contrato declarado (casa-version {version}) atrás da toolchain "
+                f"instalada ({CONTRACT_VERSION}) — leia o CHANGELOG do casa-standard e "
+                "atualize a declaração quando o repo cumprir o contrato novo (ADR-0010)")
+        elif decl > tool:
+            warnings.append(
+                f"AGENTS.md: toolchain instalada ({CONTRACT_VERSION}) atrás do contrato "
+                f"declarado (casa-version {version}) — rode scripts/casa-init a partir de "
+                "um snapshot atual do casa-standard (ADR-0010)")
+
+    ref = fm.get("casa-standard-ref")
+    if ref and ("<" in str(ref) or str(ref).strip() in {"", "unknown"}):
+        errors.append("AGENTS.md: casa-standard-ref inválido ou ainda com placeholder")
+
+    dod = section_body(text, "Como validar (DoD global do repo)")
+    if dod is None:
+        errors.append("AGENTS.md: sem seção '## Como validar (DoD global do repo)'")
+    elif not executable_lines(dod):
+        errors.append("AGENTS.md: DoD global sem linha executável em bloco de código")
+
+    for ref_path in sorted(set(re.findall(r"`(docs/context/[^`]+\.md)`", text))):
+        if not (root / ref_path).exists():
+            errors.append(f"AGENTS.md: Mapa de contexto aponta para arquivo inexistente '{ref_path}'")
+        else:
+            validate_recognized_chapter(root, ref_path, errors)
+
+
+def check_backlog_location(root, warnings):
+    """Backlog em docs/context/ é anti-padrão (§5.1; Confirmação do ADR-0002). Aviso via
+    LISTAGEM de diretório com comparação lowercase — determinístico em filesystems
+    case-sensitive (CI) e case-insensitive (dev Windows/macOS). Decisão: ADR-0011."""
+    ctx = root / "docs" / "context"
+    if not ctx.is_dir():
+        return
+    for p in sorted(ctx.iterdir()):
+        if p.is_file() and p.name.lower() == "backlog.md":
+            warnings.append(
+                f"docs/context/{p.name}: backlog é pendência, não estado imperativo "
+                "(STANDARD §5.1) — mova para docs/BACKLOG.md e atualize os ponteiros do "
+                "router (ADR-0011)")
+
+
+def render_readme(label, rows):
+    lines = [f"# {label}", "", "<!-- GERADO por scripts/docs-check — não editar à mão -->", "",
+             "| id | título | status |", "|---|---|---|"]
+    lines += [f"| [{d['id']}]({Path(d['path']).name}) | {d['title']} | {d['status']} |"
+              for d in sorted(rows, key=lambda d: d["id"])]
+    return "\n".join(lines) + "\n"
+
+
+def _git(root, args):
+    return subprocess.run(["git", *args], cwd=root, capture_output=True,
+                          encoding="utf-8", errors="replace")
+
+
+def _body_without_frontmatter(text):
+    raw, body = split_frontmatter(text)
+    return body if raw is not None else text
+
+
+def _without_current_truth(body):
+    lines, out, i = body.splitlines(), [], 0
+    while i < len(lines):
+        if re.match(r"^\s*>\s*.*VERDADE ATUAL", lines[i]):
+            while i < len(lines) and lines[i].lstrip().startswith(">"):
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out).strip()
+
+
+def normalized_adr_body(text):
+    body = _body_without_frontmatter(text)
+    return _without_current_truth(body)
+
+
+def check_adr_immutability(root, base_ref, errors):
+    diff = _git(root, ["diff", "--name-only", "--diff-filter=AMR",
+                       f"{base_ref}...HEAD", "--", "docs/adr"])
+    if diff.returncode != 0:
+        errors.append(f"imutabilidade ADR: não foi possível comparar com '{base_ref}' "
+                      f"({diff.stderr.strip() or diff.stdout.strip()})")
+        return
+
+    for rel in [x for x in diff.stdout.splitlines() if x.endswith(".md") and not x.endswith("README.md")]:
+        current = root / rel
+        if not current.exists():
+            continue
+        old = _git(root, ["show", f"{base_ref}:{rel}"])
+        if old.returncode != 0:
+            continue  # ADR novo na branch
+        old_fm_raw, _ = split_frontmatter(old.stdout)
+        old_fm, _ = parse_frontmatter(old_fm_raw or "")
+        if old_fm.get("status") not in {"accepted", "superseded", "deprecated"}:
+            continue
+        new_text = current.read_text(encoding="utf-8")
+        if normalized_adr_body(old.stdout) != normalized_adr_body(new_text):
+            errors.append(f"{rel}: ADR com status '{old_fm.get('status')}' em {base_ref} "
+                          "teve corpo alterado — crie novo ADR que supersede; "
+                          "só frontmatter e bloco VERDADE ATUAL são permitidos")
+
+
+def main():
+    # Windows usa cp1252 no stdout redirecionado; mensagens têm não-ASCII ("·", "—").
+    for s in (sys.stdout, sys.stderr):
+        if hasattr(s, "reconfigure"):
+            s.reconfigure(encoding="utf-8", errors="replace")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--root", default=".")
+    ap.add_argument("--emit-index", action="store_true")
+    ap.add_argument("--warn-only", action="store_true",
+                    help="imprime erros mas sai 0 (janela de adoção, STANDARD §10)")
+    ap.add_argument("--check-adr-immutability", action="store_true",
+                    help="compara ADRs modificados contra --base-ref e bloqueia qualquer emenda de corpo")
+    ap.add_argument("--base-ref", default=os.environ.get("CASA_BASE_REF", "origin/main"))
+    args = ap.parse_args()
+    root = Path(args.root)
+    errors, warnings, docs = [], [], {}
+
+    validate_router(root, errors, warnings)
+    check_backlog_location(root, warnings)
+
+    # Coleta, derivação e validação por documento
+    for layer, prefix in LAYERS.items():
+        folder = root / "docs" / layer
+        if not folder.exists():
+            continue
+        for path in sorted(folder.glob("*.md")):
+            if path.name == "README.md" or path.name.endswith(".template.md"):
+                continue
+            m = FILENAME_RE.match(path.name)
+            if not m:
+                errors.append(f"{path}: filename fora do padrão NNNN-kebab.md (id é derivado dele)")
+                continue
+            did = f"{prefix}-{m.group(1)}"
+            text = path.read_text(encoding="utf-8")
+            raw_fm, body = split_frontmatter(text)
+            if raw_fm is None:
+                errors.append(f"{path}: sem frontmatter")
+                continue
+            fm, fm_errs = parse_frontmatter(raw_fm)
+            errors.extend(f"{did}: {e}" for e in fm_errs)
+            for k in fm:
+                if k not in KNOWN_KEYS:
+                    warnings.append(f"{did}: campo de frontmatter fora do vocabulário: '{k}' "
+                                    "— registre a extensão num ADR do repo ou remova (STANDARD §6)")
+            visible = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+            title = first_h1(visible)
+            if not title:
+                errors.append(f"{did}: sem H1 no corpo (title é derivado dele)")
+            missing = REQUIRED - {k for k, v in fm.items() if v is not None}
+            if missing:
+                errors.append(f"{did}: campos obrigatórios ausentes: {sorted(missing)}")
+            st = fm.get("status")
+            if st and st not in STATUS_VOCAB[layer]:
+                errors.append(f"{did}: status inválido '{st}' (válidos: {sorted(STATUS_VOCAB[layer])})")
+            dt = fm.get("date")
+            if dt:
+                try:
+                    datetime.strptime(str(dt), "%Y-%m-%d")
+                except ValueError:
+                    errors.append(f"{did}: date '{dt}' inválida (data de calendário AAAA-MM-DD)")
+            if did in docs:
+                errors.append(f"{path}: id derivado duplicado '{did}' (também em {docs[did]['path']})")
+                continue
+            ib = fm.get("implemented-by") or []
+            # as_posix: no Windows str(Path) usa "\", divergindo do índice gerado no CI
+            docs[did] = {"id": did, "path": path.relative_to(root).as_posix(), "layer": layer,
+                         "title": title, "status": st,
+                         "builds-on": fm.get("builds-on") or [],
+                         "superseded-by": fm.get("superseded-by"),
+                         "implemented-by": ib if isinstance(ib, list) else [ib],
+                         "_visible": visible}
+            if fm.get("design-ref"):
+                # exportado ao índice: campo conhecido presente no grafo, não fantasma (ADR-0014)
+                docs[did]["design-ref"] = fm.get("design-ref")
+
+    # Grafo e regras por camada
+    for d in docs.values():
+        bo = d["builds-on"]
+        if not isinstance(bo, list):
+            errors.append(f"{d['id']}: builds-on deve ser lista")
+            bo = [bo]
+        for ref in bo:
+            if ":" in ref:
+                warnings.append(f"{d['id']}: referência cross-repo '{ref}' (não verificada localmente)")
+            elif ref not in docs:
+                errors.append(f"{d['id']}: builds-on aponta para doc inexistente '{ref}'")
+        sb = d["superseded-by"]
+        if sb:
+            if d["layer"] != "adr":
+                errors.append(f"{d['id']}: superseded-by é campo de ADR (specs usam status 'deprecated')")
+            elif isinstance(sb, list):
+                errors.append(f"{d['id']}: superseded-by deve ser escalar, não lista")
+            elif ":" in sb:
+                warnings.append(f"{d['id']}: superseded-by cross-repo '{sb}' (não verificado localmente)")
+            elif sb == d["id"]:
+                errors.append(f"{d['id']}: superseded-by aponta para o próprio ADR")
+            elif sb not in docs:
+                errors.append(f"{d['id']}: superseded-by inexistente '{sb}'")
+            elif docs[sb]["layer"] != "adr":
+                errors.append(f"{d['id']}: superseded-by '{sb}' não é um ADR")
+            if d["layer"] == "adr" and d["status"] != "superseded":
+                errors.append(f"{d['id']}: tem superseded-by mas status != superseded")
+        if d["layer"] == "adr" and d["status"] == "superseded":
+            if not sb:
+                errors.append(f"{d['id']}: superseded sem superseded-by")
+            if not VA_RE.search(d["_visible"]):
+                errors.append(f"{d['id']}: ADR superado sem bloco '> VERDADE ATUAL' real "
+                              "(comentário do template não conta)")
+        if d["layer"] == "specs":
+            if d["status"] in ("accepted", "implemented"):
+                open_questions = section_body(d["_visible"], "Questões em aberto")
+                if open_questions is None:
+                    errors.append(f"{d['id']}: sem seção '## Questões em aberto'")
+                elif re.search(r"(?m)^\s*[-*]\s+\[\s\]", open_questions):
+                    errors.append(f"{d['id']}: questões em aberto com checkbox pendente — "
+                                  "não pode sair de draft sem decidir ou remover o bloqueio")
+
+                dod = section_body(d["_visible"], "Definition of Done")
+                if dod is None:
+                    errors.append(f"{d['id']}: sem '## Definition of Done' — obrigatório para sair de draft")
+                else:
+                    if has_placeholder(dod):
+                        errors.append(f"{d['id']}: Definition of Done contém placeholder — "
+                                      "declare comandos reais e critério binário")
+                    if not executable_lines(dod):
+                        errors.append(f"{d['id']}: Definition of Done sem comando executável "
+                                      "em bloco de código")
+            if d["status"] == "implemented":
+                if not d["implemented-by"]:
+                    errors.append(f"{d['id']}: implemented sem implemented-by")
+                for ref in d["implemented-by"]:
+                    if has_placeholder(str(ref)):
+                        errors.append(f"{d['id']}: implemented-by contém placeholder '{ref}'")
+                    elif not (root / str(ref)).exists():
+                        errors.append(f"{d['id']}: implemented-by aponta para path inexistente '{ref}'")
+                verif = section_body(d["_visible"], "Verificação")
+                if verif is None:
+                    errors.append(f"{d['id']}: implemented sem seção '## Verificação'")
+                elif PLACEHOLDER in verif:
+                    errors.append(f"{d['id']}: ## Verificação ainda com placeholder — "
+                                  "preencha a evidência do DoD")
+                elif not [ln for ln in verif.splitlines()
+                          if ln.strip() and not ln.strip().startswith("```")]:
+                    errors.append(f"{d['id']}: ## Verificação sem evidência textual do DoD")
+
+    # Higiene de árvore (repo inteiro, diretórios de build/vendoring ignorados)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [x for x in dirnames if x not in IGNORED_DIRS]
+        for fn in filenames:
+            rel = os.path.relpath(os.path.join(dirpath, fn), root)
+            if any(re.search(pat, fn) for pat in TRASH_ALWAYS):
+                errors.append(f"higiene: arquivo proibido na árvore: {rel}")
+                continue
+            m = DUP_RE.match(fn)
+            if m and (Path(dirpath) / (m.group("base") + m.group("ext"))).exists():
+                errors.append(f"higiene: provável duplicado de sync: {rel} "
+                              f"(o original '{m.group('base')}{m.group('ext')}' existe ao lado)")
+
+    # Índices: gerar em memória; --emit-index escreve, senão compara (frescor)
+    index = [{k: v for k, v in d.items() if not k.startswith("_")} for d in docs.values()]
+    index.sort(key=lambda d: d["id"])
+    index_text = json.dumps(index, indent=2, ensure_ascii=False) + "\n"
+    readmes = {}
+    for layer, label in (("adr", "ADRs"), ("specs", "Specs")):
+        folder = root / "docs" / layer
+        if folder.exists():
+            readmes[folder / "README.md"] = render_readme(
+                label, [d for d in index if d["layer"] == layer])
+
+    if args.emit_index:
+        (root / "docs").mkdir(exist_ok=True)
+        (root / "docs" / "index.json").write_text(index_text, encoding="utf-8")
+        for p, content in readmes.items():
+            p.write_text(content, encoding="utf-8")
+        print(f"READMEs e index.json gerados ({len(index)} docs).")
+    else:
+        for p, content in readmes.items():
+            rel = p.relative_to(root)
+            has_rows = content.count("\n") > 6
+            if not p.exists():
+                if has_rows:
+                    errors.append(f"índices: {rel} ausente — rode scripts/docs-check --emit-index")
+            elif p.read_text(encoding="utf-8") != content:
+                errors.append(f"índices: {rel} divergente do gerado — rode scripts/docs-check --emit-index")
+        ij = root / "docs" / "index.json"
+        if ij.exists() and ij.read_text(encoding="utf-8") != index_text:
+            errors.append("índices: docs/index.json divergente — rode scripts/docs-check --emit-index")
+
+    if args.check_adr_immutability:
+        check_adr_immutability(root, args.base_ref, errors)
+
+    for w in warnings:
+        print(f"AVISO: {w}")
+    for e in errors:
+        print(f"ERRO:  {e}")
+    print(f"\n{len(docs)} docs · {len(errors)} erro(s) · {len(warnings)} aviso(s)")
+    sys.exit(0 if (args.warn_only or not errors) else 1)
+
+
+if __name__ == "__main__":
+    main()

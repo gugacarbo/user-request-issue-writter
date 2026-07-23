@@ -1,0 +1,21 @@
+# Gate de CI do CASA Standard (§3/§8) — instalado pelo casa-init em
+# .github/workflows/docs-check.yml quando o repo tem remote do GitHub (ADR-0006).
+name: docs-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validar docs (CASA Standard §8)
+        run: python3 scripts/docs-check --check-adr-immutability --base-ref origin/main
