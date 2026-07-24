@@ -32,6 +32,9 @@ COPY repos.json ./
 # SQLite database lives in a named volume so it survives restarts (ADR-0008).
 VOLUME ["/app/data"]
 ENV DATABASE_PATH=/app/data/app.db
+# Ensure the data directory exists and is writable by the runtime user before
+# dropping privileges; otherwise `createDb()` fails with SQLITE_CANTOPEN.
+RUN mkdir -p /app/data && chown -R node:node /app/data
 EXPOSE 8080
 USER node
 CMD ["node", "dist/index.js"]
