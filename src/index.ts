@@ -1,11 +1,11 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { env } from "./config/env";
 import { createDb } from "./db";
-import { env } from "./env";
-import { createGitHubClient } from "./github";
-import { createOpenAiLlmClient } from "./openai";
-import { buildServer } from "./server";
-import { startWorker, type WorkerHandle } from "./worker";
+import { createGitHubClient } from "./github/github";
+import { createOpenAiLlmClient } from "./llm/openai";
+import { startWorker, type WorkerHandle } from "./queue/worker";
+import { buildServer } from "./web/server";
 
 async function main(): Promise<void> {
 	// Ensure the SQLite file's parent dir exists (DATABASE_PATH may point at
@@ -26,6 +26,9 @@ async function main(): Promise<void> {
 		webhookSecret: env.WEBHOOK_SECRET,
 		db,
 		logger: { level: env.LOG_LEVEL },
+		// Serve the built SPA (dist/app) and stream queue/logs over SSE when
+		// present (ADR-0009). Missing dir logs a warning, not a boot failure.
+		dashboard: { db, serveStatic: true },
 	});
 
 	// Persistent queue worker (ADR-0008): polls the `queue` table for

@@ -1,6 +1,10 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { extractTicket, type TicketContext, verifySignature } from "../webhook";
+import {
+	extractTicket,
+	type TicketContext,
+	verifySignature,
+} from "../web/webhook";
 
 const SECRET = "topsecret";
 

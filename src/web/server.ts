@@ -1,15 +1,16 @@
 import { createHash } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
-import { isRepoAllowed } from "./allowlist";
-import type { DB } from "./db";
-import type { GitHubClient } from "./github";
+import { isRepoAllowed } from "../config/allowlist";
+import type { DB } from "../db";
+import type { GitHubClient } from "../github/github";
 import {
 	type GenerateIssueInput,
 	generateIssue,
 	type IssueContext,
 	type LlmClient,
-} from "./llm";
-import { enqueueRequest, type QueueDeps } from "./queue";
+} from "../llm/llm";
+import { enqueueRequest, type QueueDeps } from "../queue/queue";
+import { type DashboardPluginDeps, registerDashboard } from "./dashboard";
 import { extractTicket, type TicketContext, verifySignature } from "./webhook";
 
 export type ServerDeps = {
@@ -24,6 +25,13 @@ export type ServerDeps = {
 	 */
 	readonly db: DB;
 	readonly logger?: false | { readonly level: string };
+	/**
+	 * Dashboard options (ADR-0009). When omitted, the dashboard plugin is
+	 * NOT registered (webhook-only server, useful for some unit tests). The
+	 * production entry point (`index.ts`) passes `serveStatic: true` so the
+	 * built SPA is served from `dist/app`.
+	 */
+	readonly dashboard?: DashboardPluginDeps;
 };
 
 function extractContextFields(ctx: TicketContext): IssueContext {
@@ -191,6 +199,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 			delivery,
 		});
 	});
+
+	// Optional dashboard (ADR-0009): SSE + static SPA. Only registered when
+	// `deps.dashboard` is provided; the production entry point opts in.
+	if (deps.dashboard) {
+		registerDashboard(server, deps.dashboard);
+	}
 
 	return server;
 }

@@ -10,13 +10,13 @@ import {
 	it,
 	vi,
 } from "vitest";
-import type { CreateIssueResult, GitHubClient } from "../github";
-import { createOpenAiLlmClient } from "../openai";
-import { buildServer, type ServerDeps } from "../server";
-import { startWorker, type WorkerHandle } from "../worker";
+import type { CreateIssueResult, GitHubClient } from "../github/github";
+import { createOpenAiLlmClient } from "../llm/openai";
+import { startWorker, type WorkerHandle } from "../queue/worker";
+import { buildServer, type ServerDeps } from "../web/server";
 import { makeTestDb, type TestDb } from "./dbTestHelper";
 
-vi.mock("../allowlist", () => ({
+vi.mock("../config/allowlist", () => ({
 	isRepoAllowed: vi.fn(() => true),
 }));
 

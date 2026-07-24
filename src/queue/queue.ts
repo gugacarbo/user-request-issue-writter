@@ -1,11 +1,11 @@
 import { and, eq, lte, sql } from "drizzle-orm";
-import type { DB } from "./db";
+import type { DB } from "../db";
 import {
 	llmLogs,
 	queue as queueTable,
 	type RequestStatus,
 	requests,
-} from "./db/schema";
+} from "../db/schema";
 
 /**
  * Repository + queue ops for the persistence layer (ADR-0007/ADR-0008).
@@ -120,9 +120,11 @@ export function listLlmLogsForRequest(deps: QueueDeps, requestId: number) {
 }
 
 /**
- * Test/admin helper: directly set the queue row status for a request. Used to
- * simulate a crash mid-run (`processing`) in tests; not part of the production
- * worker flow.
+ * Test/admin helper: directly set the status for a request in BOTH the
+ * `queue` and `requests` rows, mirroring what the production worker does in
+ * `finalizeProcessing`. Used to simulate a crash mid-run (`processing`) or
+ * seed a terminal state in tests without going through the worker; not part
+ * of the production flow.
  */
 export function setQueueStatusForRequest(
 	deps: QueueDeps,
@@ -130,11 +132,16 @@ export function setQueueStatusForRequest(
 	status: RequestStatus,
 ): void {
 	const now = Math.floor(Date.now() / 1000);
-	deps.db
-		.update(queueTable)
-		.set({ status, updatedAt: now })
-		.where(eq(queueTable.requestId, requestId))
-		.run();
+	deps.db.transaction((tx) => {
+		tx.update(queueTable)
+			.set({ status, updatedAt: now })
+			.where(eq(queueTable.requestId, requestId))
+			.run();
+		tx.update(requests)
+			.set({ status, updatedAt: now })
+			.where(eq(requests.id, requestId))
+			.run();
+	});
 }
 
 /**

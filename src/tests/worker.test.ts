@@ -1,19 +1,19 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreateIssueResult, GitHubClient } from "../github";
-import type { LlmClient } from "../llm";
+import type { CreateIssueResult, GitHubClient } from "../github/github";
+import type { LlmClient } from "../llm/llm";
+import type { IssueProposal } from "../llm/tools";
 import {
 	enqueueRequest,
 	getQueueByRequest,
 	getRequest,
 	listLlmLogsForRequest,
 	setQueueStatusForRequest,
-} from "../queue";
-import type { IssueProposal } from "../tools";
-import { startWorker, type WorkerHandle } from "../worker";
+} from "../queue/queue";
+import { startWorker, type WorkerHandle } from "../queue/worker";
 import { makeTestDb, type TestDb } from "./dbTestHelper";
 
-vi.mock("../allowlist", () => ({ isRepoAllowed: vi.fn(() => true) }));
+vi.mock("../config/allowlist", () => ({ isRepoAllowed: vi.fn(() => true) }));
 
 function bodyHash(body: string): string {
 	return createHash("sha256").update(body).digest("hex");

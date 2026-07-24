@@ -1,13 +1,13 @@
 import { createHash, createHmac } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreateIssueResult, GitHubClient } from "../github";
-import type { LlmClient } from "../llm";
-import { buildServer, type ServerDeps } from "../server";
-import type { IssueProposal } from "../tools";
+import type { CreateIssueResult, GitHubClient } from "../github/github";
+import type { LlmClient } from "../llm/llm";
+import type { IssueProposal } from "../llm/tools";
+import { buildServer, type ServerDeps } from "../web/server";
 import { makeTestDb, type TestDb } from "./dbTestHelper";
 
-vi.mock("../allowlist", () => ({
+vi.mock("../config/allowlist", () => ({
 	isRepoAllowed: vi.fn(() => true),
 }));
 
@@ -149,7 +149,7 @@ describe("server", () => {
 	});
 
 	it("returns 403 when repo is not in allowlist", async () => {
-		const { isRepoAllowed } = await import("../allowlist");
+		const { isRepoAllowed } = await import("../config/allowlist");
 		vi.mocked(isRepoAllowed).mockReturnValue(false);
 		const body = ticketPayload({ repo: "evil/repo" });
 		const res = await server.inject({

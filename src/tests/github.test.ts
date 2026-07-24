@@ -76,7 +76,7 @@ describe("github client", () => {
 
 	it("getRepoTree lists top-level paths and sends Bearer auth", async () => {
 		const { mock, calls } = captureFetch();
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const tree = await gh.getRepoTree("owner", "repo");
 		expect(tree).toEqual(["src/main.ts", "README.md"]);
@@ -101,7 +101,7 @@ describe("github client", () => {
 			}),
 		);
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const content = await gh.getFileContent("owner", "repo", "src/big.ts");
 		expect(content.length).toBeLessThanOrEqual(10_000);
@@ -123,7 +123,7 @@ describe("github client", () => {
 			return jsonResponse({});
 		});
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const info = await gh.getRepoInfo("owner", "repo");
 		expect(info.description).toBe("demo repo");
@@ -133,7 +133,7 @@ describe("github client", () => {
 
 	it("createIssue returns issue number and url", async () => {
 		const { calls } = captureFetch();
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const res = await gh.createIssue("owner", "repo", {
 			title: "t",
@@ -158,7 +158,7 @@ describe("github client", () => {
 			return jsonResponse({ number: 7, html_url: "https://example/issue/7" });
 		});
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const res = await gh.createIssue("owner", "repo", {
 			title: "t",
@@ -176,7 +176,7 @@ describe("github client", () => {
 			jsonResponse({ message: "Not Found" }, { status: 404, ok: false }),
 		);
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		await expect(gh.getRepoTree("owner", "repo")).rejects.toThrow(
 			/GitHub API 404/,
@@ -197,7 +197,7 @@ describe("github client", () => {
 			return jsonResponse({});
 		});
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const info = await gh.getRepoInfo("owner", "repo");
 		expect(info.description).toBe("demo");
@@ -209,7 +209,7 @@ describe("github client", () => {
 			jsonResponse({ message: "Server Error" }, { status: 500, ok: false }),
 		);
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		await expect(
 			gh.createIssue("owner", "repo", { title: "t", body: "b" }),
@@ -219,7 +219,7 @@ describe("github client", () => {
 	it("getFileContent returns empty string when content is missing", async () => {
 		const mock = vi.fn(async () => jsonResponse({ encoding: "base64" }));
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const content = await gh.getFileContent("owner", "repo", "empty.ts");
 		expect(content).toBe("");
@@ -230,7 +230,7 @@ describe("github client", () => {
 			jsonResponse({ content: "aGVsbG8=", encoding: "utf8" }),
 		);
 		vi.stubGlobal("fetch", mock);
-		const { createGitHubClient } = await import("../github");
+		const { createGitHubClient } = await import("../github/github");
 		const gh = createGitHubClient(TOKEN);
 		const content = await gh.getFileContent("owner", "repo", "utf8.ts");
 		expect(content).toBe("");

@@ -16,21 +16,21 @@ beforeEach(() => {
 describe("allowlist", () => {
 	it("allows repos present in repos.json", async () => {
 		vi.mocked(readFileSync).mockReturnValue(JSON.stringify(SAMPLE));
-		const { isRepoAllowed } = await import("../allowlist");
+		const { isRepoAllowed } = await import("../config/allowlist");
 		expect(isRepoAllowed("owner/repo")).toBe(true);
 		expect(isRepoAllowed("org/another")).toBe(true);
 	});
 
 	it("rejects repos not in repos.json", async () => {
 		vi.mocked(readFileSync).mockReturnValue(JSON.stringify(SAMPLE));
-		const { isRepoAllowed } = await import("../allowlist");
+		const { isRepoAllowed } = await import("../config/allowlist");
 		expect(isRepoAllowed("evil/owner")).toBe(false);
 		expect(isRepoAllowed("")).toBe(false);
 	});
 
 	it("parseRepo splits owner/repo correctly", async () => {
 		vi.mocked(readFileSync).mockReturnValue(JSON.stringify(SAMPLE));
-		const { parseRepo } = await import("../allowlist");
+		const { parseRepo } = await import("../config/allowlist");
 		expect(parseRepo("owner/repo")).toEqual({ owner: "owner", repo: "repo" });
 		expect(parseRepo("a/b/c")).toBeNull();
 		expect(parseRepo("")).toBeNull();
@@ -43,7 +43,7 @@ describe("allowlist", () => {
 			throw new Error("ENOENT");
 		});
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-		const { isRepoAllowed } = await import("../allowlist");
+		const { isRepoAllowed } = await import("../config/allowlist");
 		expect(isRepoAllowed("owner/repo")).toBe(false);
 		expect(warn).toHaveBeenCalledWith(
 			expect.stringContaining("failed to load repos.json"),

@@ -1,4 +1,4 @@
-import type { GitHubClient } from "./github";
+import type { GitHubClient } from "../github/github";
 import { dispatchTool, type IssueProposal, toolSchemas } from "./tools";
 
 export type ToolCall = {

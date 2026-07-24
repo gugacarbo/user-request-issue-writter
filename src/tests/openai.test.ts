@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { toolSchemas } from "../tools";
+import type { toolSchemas } from "../llm/tools";
 
 const createMock = vi.fn();
 
@@ -25,7 +25,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -59,7 +59,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -100,7 +100,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -139,7 +139,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -171,7 +171,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -197,7 +197,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -230,7 +230,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -273,7 +273,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -307,7 +307,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -331,7 +331,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -354,7 +354,7 @@ describe("openai client", () => {
 		createMock.mockResolvedValueOnce({
 			choices: [{}],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -372,7 +372,7 @@ describe("openai client", () => {
 		createMock.mockResolvedValueOnce({
 			choices: [],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -404,7 +404,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",
@@ -428,7 +428,7 @@ describe("openai client", () => {
 				},
 			],
 		});
-		const { createOpenAiLlmClient } = await import("../openai");
+		const { createOpenAiLlmClient } = await import("../llm/openai");
 		const client = createOpenAiLlmClient({
 			baseUrl: "https://api.example.com",
 			apiKey: "sk-test",

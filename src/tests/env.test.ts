@@ -46,7 +46,7 @@ describe("env", () => {
 	});
 
 	it("loads a fully provided env as a typed object", async () => {
-		const { env } = await import("../env");
+		const { env } = await import("../config/env");
 		expect(env.PORT).toBe(9090);
 		expect(env.WEBHOOK_SECRET).toBe("shh");
 		expect(env.GITHUB_TOKEN).toBe("ghp_x");
@@ -59,33 +59,33 @@ describe("env", () => {
 	it("applies PORT and LOG_LEVEL defaults when omitted", async () => {
 		delete process.env.PORT;
 		delete process.env.LOG_LEVEL;
-		const { env } = await import("../env");
+		const { env } = await import("../config/env");
 		expect(env.PORT).toBe(8080);
 		expect(env.LOG_LEVEL).toBe("info");
 	});
 
 	it("throws when WEBHOOK_SECRET is missing", async () => {
 		delete process.env.WEBHOOK_SECRET;
-		await expect(import("../env")).rejects.toThrow(/WEBHOOK_SECRET/i);
+		await expect(import("../config/env")).rejects.toThrow(/WEBHOOK_SECRET/i);
 	});
 
 	it("throws when GITHUB_TOKEN is missing", async () => {
 		delete process.env.GITHUB_TOKEN;
-		await expect(import("../env")).rejects.toThrow(/GITHUB_TOKEN/i);
+		await expect(import("../config/env")).rejects.toThrow(/GITHUB_TOKEN/i);
 	});
 
 	it("throws when LLM_API_KEY is missing", async () => {
 		delete process.env.LLM_API_KEY;
-		await expect(import("../env")).rejects.toThrow(/LLM_API_KEY/i);
+		await expect(import("../config/env")).rejects.toThrow(/LLM_API_KEY/i);
 	});
 
 	it("throws when PORT is not a number", async () => {
 		process.env.PORT = "not-a-port";
-		await expect(import("../env")).rejects.toThrow(/PORT/i);
+		await expect(import("../config/env")).rejects.toThrow(/PORT/i);
 	});
 
 	it("throws when LLM_BASE_URL is not a valid URL", async () => {
 		process.env.LLM_BASE_URL = "not-a-url";
-		await expect(import("../env")).rejects.toThrow(/LLM_BASE_URL/i);
+		await expect(import("../config/env")).rejects.toThrow(/LLM_BASE_URL/i);
 	});
 });

@@ -1,7 +1,7 @@
-import type { DB } from "./db";
-import type { GitHubClient } from "./github";
-import type { GenerateIssueInput, LlmClient } from "./llm";
-import { generateIssue } from "./llm";
+import type { DB } from "../db";
+import type { GitHubClient } from "../github/github";
+import type { GenerateIssueInput, LlmClient } from "../llm/llm";
+import { generateIssue } from "../llm/llm";
 import type { QueueDeps } from "./queue";
 import {
 	appendLlmLog,

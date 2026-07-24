@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { createGitHubClient } from "../github";
+import { createGitHubClient } from "../github/github";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const canRun = Boolean(GITHUB_TOKEN);
