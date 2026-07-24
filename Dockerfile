@@ -36,5 +36,9 @@ ENV DATABASE_PATH=/app/data/app.db
 # dropping privileges; otherwise `createDb()` fails with SQLITE_CANTOPEN.
 RUN mkdir -p /app/data && chown -R node:node /app/data
 EXPOSE 8080
+# Healthcheck gives the orchestrator a clear signal that the server is alive.
+# The endpoint is registered in `src/web/server.ts` and has no side effects.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+	CMD node -e "fetch('http://127.0.0.1:8080/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 USER node
 CMD ["node", "dist/index.js"]
