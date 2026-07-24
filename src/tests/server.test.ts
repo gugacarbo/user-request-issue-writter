@@ -5,6 +5,7 @@ import type { CreateIssueResult, GitHubClient } from "../github";
 import type { LlmClient } from "../llm";
 import { buildServer, type ServerDeps } from "../server";
 import type { IssueProposal } from "../tools";
+import { makeTestDb, type TestDb } from "./dbTestHelper";
 
 vi.mock("../allowlist", () => ({
 	isRepoAllowed: vi.fn(() => true),
@@ -59,12 +60,16 @@ function mockLlm(proposal: IssueProposal): LlmClient {
 	};
 }
 
-function deps(overrides: Partial<ServerDeps> = {}): ServerDeps {
+function deps(
+	db: NonNullable<ServerDeps["db"]>,
+	overrides: Partial<Omit<ServerDeps, "db">> = {},
+): ServerDeps {
 	return {
 		github: mockGitHub(),
 		llm: mockLlm({ title: "Bug", body: "desc", labels: ["bug"] }),
 		webhookSecret: SECRET,
-		...overrides,
+		db,
+		...(overrides as Partial<ServerDeps>),
 	};
 }
 
@@ -81,14 +86,17 @@ const baseHeaders = (body: string) => ({
 
 describe("server", () => {
 	let server: FastifyInstance;
+	let testDb: TestDb;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		server = await app(deps());
+		testDb = makeTestDb();
+		server = await app(deps(testDb.db));
 	});
 
 	afterEach(async () => {
 		await server.close();
+		testDb.cleanup();
 	});
 
 	it("healthcheck returns 200", async () => {
@@ -154,9 +162,9 @@ describe("server", () => {
 		vi.mocked(isRepoAllowed).mockReturnValue(true);
 	});
 
-	it("returns 202 accepted and processes the issue in background", async () => {
+	it("persists the request and answers 202 (worker is tested separately)", async () => {
 		const gh = mockGitHub({ number: 42, url: "https://example/42" });
-		server = await app(deps({ github: gh }));
+		server = await app(deps(testDb.db, { github: gh }));
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",
@@ -165,21 +173,22 @@ describe("server", () => {
 			payload: body,
 		});
 		expect(res.statusCode).toBe(202);
-		const json = res.json() as { accepted: boolean; bodyHash: string };
+		const json = res.json() as {
+			accepted: boolean;
+			requestId: number;
+			bodyHash: string;
+		};
 		expect(json.accepted).toBe(true);
 		expect(json.bodyHash).toBe(bodyHash(body));
-		await vi.waitFor(() => expect(gh.createIssue).toHaveBeenCalled());
-		const call = (gh.createIssue as ReturnType<typeof vi.fn>).mock.calls[0];
-		expect(call?.[0]).toBe("owner");
-		expect(call?.[1]).toBe("repo");
-		const proposal = call?.[2];
-		expect(proposal.body).toContain("Alice");
-		expect(proposal.body).toContain("alice@example.com");
+		expect(json.requestId).toBeGreaterThan(0);
+		// Worker is NOT started in buildServer; createIssue is therefore NOT
+		// called here. The queue row is left pending for the worker to claim.
+		expect(gh.createIssue).not.toHaveBeenCalled();
 	});
 
-	it("ignores duplicate body hash (dedupe)", async () => {
+	it("ignores duplicate body hash (durable dedupe via SQLite UNIQUE)", async () => {
 		const gh = mockGitHub();
-		server = await app(deps({ github: gh }));
+		server = await app(deps(testDb.db, { github: gh }));
 		const body = ticketPayload();
 		const headers = baseHeaders(body);
 		const first = await server.inject({
@@ -204,16 +213,13 @@ describe("server", () => {
 		expect(secondJson.accepted).toBe(true);
 		expect(secondJson.bodyHash).toBe(bodyHash(body));
 		expect(secondJson.duplicate).toBe(true);
-		await vi.waitFor(() =>
-			expect(
-				(gh.createIssue as ReturnType<typeof vi.fn>).mock.calls,
-			).toHaveLength(1),
-		);
+		// No worker → createIssue is never called; both calls only touch the DB.
+		expect(gh.createIssue).not.toHaveBeenCalled();
 	});
 
 	it("dryRun=true returns issue proposal without calling createIssue", async () => {
 		const gh = mockGitHub();
-		server = await app(deps({ github: gh }));
+		server = await app(deps(testDb.db, { github: gh }));
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",
@@ -247,7 +253,7 @@ describe("server", () => {
 		const llm: LlmClient = {
 			chat: vi.fn(async () => ({ toolCalls: [], content: null })),
 		};
-		server = await app(deps({ github: gh, llm }));
+		server = await app(deps(testDb.db, { github: gh, llm }));
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",
@@ -268,7 +274,7 @@ describe("server", () => {
 				throw new Error("LLM down");
 			}),
 		};
-		server = await app(deps({ github: gh, llm }));
+		server = await app(deps(testDb.db, { github: gh, llm }));
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",
@@ -284,7 +290,7 @@ describe("server", () => {
 
 	it("returns 202 with bodyHash when no delivery header is present", async () => {
 		const gh = mockGitHub();
-		server = await app(deps({ github: gh }));
+		server = await app(deps(testDb.db, { github: gh }));
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",

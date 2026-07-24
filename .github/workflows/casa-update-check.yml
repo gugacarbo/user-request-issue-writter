@@ -1,0 +1,26 @@
+name: casa-update-check
+
+# Detecção AGENDADA de contrato CASA desatualizado (casa-standard ADR-0016, SPEC-0008).
+# Fora do gate por decisão: rede aqui é aceitável, falha aqui nunca bloqueia PR/commit.
+# O aviso vira UMA issue com a label casa-update — editada enquanto o repo estiver
+# atrás, fechada sozinha quando alcançar. Ajuste o cron à vontade: este arquivo é do
+# repo depois de criado (o casa-init não o sobrescreve).
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"   # segunda, 09:17 UTC — horário deslocado de propósito
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  casa-update-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comparar contrato declarado com o vigente (ADR-0016)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/casa-update-check

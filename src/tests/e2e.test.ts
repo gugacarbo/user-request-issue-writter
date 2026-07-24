@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import {
@@ -12,6 +13,8 @@ import {
 import type { CreateIssueResult, GitHubClient } from "../github";
 import { createOpenAiLlmClient } from "../openai";
 import { buildServer, type ServerDeps } from "../server";
+import { startWorker, type WorkerHandle } from "../worker";
+import { makeTestDb, type TestDb } from "./dbTestHelper";
 
 vi.mock("../allowlist", () => ({
 	isRepoAllowed: vi.fn(() => true),
@@ -36,6 +39,8 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 		body: string;
 		labels?: string[];
 	} | null = null;
+	let testDb: TestDb;
+	let worker: WorkerHandle;
 
 	const mockGitHub: GitHubClient = {
 		getRepoTree: vi.fn(async () => [
@@ -85,21 +90,42 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 		if (!llmEnv.apiKey || !llmEnv.baseUrl || !llmEnv.model) {
 			throw new Error("missing LLM env vars");
 		}
+		const apiKey = llmEnv.apiKey;
+		const llmBaseUrl = llmEnv.baseUrl;
+		const model = llmEnv.model;
+		testDb = makeTestDb();
 		const deps: ServerDeps = {
 			github: mockGitHub,
 			llm: createOpenAiLlmClient({
-				baseUrl: llmEnv.baseUrl,
-				apiKey: llmEnv.apiKey,
-				model: llmEnv.model,
+				baseUrl: llmBaseUrl,
+				apiKey,
+				model,
 			}),
 			webhookSecret: WEBHOOK_SECRET,
+			db: testDb.db,
 			logger: { level: process.env.LOG_LEVEL ?? "info" },
 		};
 		const server = buildServer(deps);
+		// Same-process worker (ADR-0008) drains the queue and drives the real
+		// LLM tool loop, so the e2e flow mirrors production exactly.
+		worker = startWorker({
+			db: testDb.db,
+			github: mockGitHub,
+			llm: createOpenAiLlmClient({
+				baseUrl: llmBaseUrl,
+				apiKey,
+				model,
+			}),
+			pollIntervalMs: 100,
+		});
 		await server.listen({ port: 0, host: "127.0.0.1" });
 		const address = server.server.address() as AddressInfo;
 		baseUrl = `http://127.0.0.1:${address.port}`;
-		afterAll(() => server.close());
+		afterAll(async () => {
+			await worker.stop();
+			await server.close();
+			testDb.cleanup();
+		});
 	});
 
 	beforeEach(() => {

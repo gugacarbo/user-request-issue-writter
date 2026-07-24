@@ -10,3 +10,9 @@ insert_final_newline = true
 
 [*.md]
 trim_trailing_whitespace = false
+
+# Migrations are generated only via drizzle-kit (ADR-0007) and are IMMUTABLE
+# after generation. This makes them read-only so no editor/formatter/linter
+# (or human) accidentally edits them; rename/recreate via a new migration.
+[migrations/**]
+read_only = true

@@ -6,3 +6,10 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    # SQLite database volume: persists the requests/queue/llm_logs tables
+    # across restarts and image rebuilds (ADR-0007/0008).
+    volumes:
+      - webhook-data:/app/data
+
+volumes:
+  webhook-data:

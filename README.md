@@ -6,7 +6,7 @@ assinatura, usa um LLM (OpenAI-compatible) com *function calling* para
 analisar o repositório sob demanda, e cria uma issue no GitHub a partir
 do ticket enviado.
 
-Consulte [`PLAN.md`](PLAN.md) e [`docs/adrs/`](docs/adrs/README.md) para o
+Consulte [`PLAN.md`](PLAN.md) e [`docs/adr/`](docs/adr/README.md) para o
 detalhamento de arquitetura.
 
 ## Pré-requisitos
@@ -21,15 +21,16 @@ detalhamento de arquitetura.
 
 Copie `.env.example` para `.env` e preencha:
 
-| Variável | Obrigatório | Padrão | Descrição |
-| --- | --- | --- | --- |
-| `PORT` | não | `8080` | Porta HTTP |
-| `WEBHOOK_SECRET` | sim | — | Segredo do webhook GitHub (HMAC SHA256) |
-| `GITHUB_TOKEN` | sim | — | PAT com `repo` (ler arquivos + criar issue) |
-| `LLM_BASE_URL` | sim | — | Ex.: `https://api.openai.com/v1` |
-| `LLM_API_KEY` | sim | — | Chave da API LLM |
-| `LLM_MODEL` | sim | — | Ex.: `gpt-4o-mini` |
-| `LOG_LEVEL` | não | `info` | Nível do pino |
+| Variável         | Obrigatório | Padrão          | Descrição                                                                                                           |
+| ---------------- | ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `PORT`           | não         | `8080`          | Porta HTTP                                                                                                          |
+| `WEBHOOK_SECRET` | sim         | —               | Segredo do webhook GitHub (HMAC SHA256)                                                                             |
+| `GITHUB_TOKEN`   | sim         | —               | PAT com `repo` (ler arquivos + criar issue)                                                                         |
+| `LLM_BASE_URL`   | sim         | —               | Ex.: `https://api.openai.com/v1`                                                                                    |
+| `LLM_API_KEY`    | sim         | —               | Chave da API LLM                                                                                                    |
+| `LLM_MODEL`      | sim         | —               | Ex.: `gpt-4o-mini`                                                                                                  |
+| `LOG_LEVEL`      | não         | `info`          | Nível do pino                                                                                                       |
+| `DATABASE_PATH`  | não         | `./data/app.db` | Caminho do SQLite (ou `:memory:`). Veja [ADR-0007](docs/adr/0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md). |
 
 ## Enviando um ticket
 
@@ -106,36 +107,50 @@ curl http://localhost:8080/health
 2. Valida assinatura HMAC (`timingSafeEqual`); 401 se divergir.
 3. Faz parse do JSON e extrai `repo` + `payload.descricao`; 400/422 se inválido.
 4. Verifica se o `repo` está no allowlist (`repos.json`); 403 se não estiver.
-5. Deduplica por **hash SHA-256 do corpo** (em memória, TTL ~10 min).
-6. Responde **202** imediatamente e processa em background
-   (`?dryRun=true` executa de forma síncrona e devolve a proposta sem criar).
-7. Loop de function calling do LLM (`list_files`, `read_file`,
-   `get_repo_info`) até chamar `submit_issue`.
-8. Cria a issue via GitHub API (com fallback de labels se 422).
-9. Loga o resultado via pino.
+5. Calcula o **hash SHA-256 do corpo**.
+6. **Persiste** a solicitação + item de fila no SQLite (transação)
+   [`requests`/`queue` — ADR-0008]; o `UNIQUE(body_hash)` é o dedupe durável:
+   reenvios idênticos respondem **200 no-op** (`duplicate: true`).
+7. Responde **202** imediatamente com `requestId`/`bodyHash`.
+8. Worker (mesmo processo, iniciado no boot) claims `pending` da fila e
+   processa em background (`?dryRun=true` executa de forma síncrona e
+   devolve a proposta sem enfileirar/criar).
+9. Loop de function calling do LLM (`list_files`, `read_file`,
+   `get_repo_info`) até chamar `submit_issue`; cada `onDebug` é gravado em
+   `llm_logs` para auditoria.
+10. Cria a issue via GitHub API (com fallback de labels se 422) e marca a
+    fila como `done`/`failed`.
 
 ## Scripts
 
 ```sh
 pnpm run dev        # desenvolvimento com watch
-pnpm run build      # compila TypeScript
+pnpm run build      # compila TypeScript (esbuild)
 pnpm run start      # executa dist/index.js
 pnpm run test       # roda o Vitest
 pnpm run lint       # Biome check
 pnpm run format     # Biome check --write
-pnpm run typecheck  # tsc --noEmit
+pnpm run typecheck  # tsc
 pnpm run knip       # análise de código morto
+pnpm run db:generate # drizzle-kit generate --name <slug> (ADR-0007)
+pnpm run db:migrate  # drizzle-kit migrate
 ```
 
 ## Notas operacionais
 
 - O GitHub reenvia webhooks em caso de timeout/falha. O servidor responde
-  202 cedo e deduplica por **hash SHA-256 do corpo da requisição** (em
-  memória, TTL ~10 min) para evitar issues duplicadas. Veja
-  [ADR-0003](docs/adrs/0003-202-async-with-in-memory-dedupe.md).
+  202 cedo (após persistir) e deduplica por **hash SHA-256 do corpo da
+  requisição** com `UNIQUE` no SQLite (substitui o dedupe em memória do
+  ADR-0003; ver [ADR-0008](docs/adr/0008-persistent-queue-and-llm-logs-in-sqlite.md)).
+- Jobs em processamento sobrevivem a restarts: o worker reenfileira linhas
+  deixadas em `processing` no boot (ver ADR-0008).
+- Migrations são **geradas somente pelo ORM** (`drizzle-kit generate --name`),
+  uma tabela por arquivo, e nunca editadas manualmente (ver
+  [ADR-0007](docs/adr/0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md)).
 - O servidor nunca clona repositórios: lê via GitHub API com o PAT. Veja
-  [ADR-0005](docs/adrs/0005-read-repo-via-github-api-no-clone.md).
+  [ADR-0005](docs/adr/0005-read-repo-via-github-api-no-clone.md).
 - Para HTTPS, use um reverse proxy (Caddy/Nginx) na frente do servidor.
+- Em Docker, o SQLite vive no volume `/app/data` (ver `docker-compose.yml`).
 
 ## Licença
 

@@ -1,3 +1,10 @@
 #!/bin/sh
 set -eu
-exec "$(git rev-parse --show-toplevel)/scripts/pre-commit"
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+. "$REPO_ROOT/scripts/lib/shared.sh"
+cd "$REPO_ROOT"
+
+run_pm run lint-staged
+
+exec "$REPO_ROOT/scripts/pre-commit"

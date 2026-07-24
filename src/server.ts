@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { isRepoAllowed } from "./allowlist";
+import type { DB } from "./db";
 import type { GitHubClient } from "./github";
 import {
 	type GenerateIssueInput,
@@ -8,17 +9,22 @@ import {
 	type IssueContext,
 	type LlmClient,
 } from "./llm";
+import { enqueueRequest, type QueueDeps } from "./queue";
 import { extractTicket, type TicketContext, verifySignature } from "./webhook";
 
 export type ServerDeps = {
 	readonly github: GitHubClient;
 	readonly llm: LlmClient;
 	readonly webhookSecret: string;
-	readonly dedupeTtlMs?: number;
+	/**
+	 * Persistent DB handle (ADR-0007/0008). Required for the production path:
+	 * the webhook enqueues the request+queue item in SQLite BEFORE answering
+	 * 202. Tests that exercise only the dryRun/validation paths may pass a DB
+	 * instance backed by `:memory:`.
+	 */
+	readonly db: DB;
 	readonly logger?: false | { readonly level: string };
 };
-
-const DEFAULT_DEDUPE_TTL_MS = 10 * 60 * 1000;
 
 function extractContextFields(ctx: TicketContext): IssueContext {
 	return {
@@ -45,19 +51,6 @@ function buildIssueBody(
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
-	const ttl = deps.dedupeTtlMs ?? DEFAULT_DEDUPE_TTL_MS;
-	const seenBodies = new Map<string, number>();
-
-	function isDuplicate(bodyHash: string): boolean {
-		const now = Date.now();
-		for (const [key, expires] of seenBodies) {
-			if (expires < now) seenBodies.delete(key);
-		}
-		if (seenBodies.has(bodyHash)) return true;
-		seenBodies.set(bodyHash, now + ttl);
-		return false;
-	}
-
 	const server = Fastify({
 		logger: deps.logger === undefined ? false : deps.logger,
 	});
@@ -74,41 +67,41 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 		const signature = request.headers["x-hub-signature-256"] as
 			| string
 			| undefined;
+		const delivery = (request.headers["x-delivery-id"] as string) ?? undefined;
 		const rawBody = request.body as Buffer | undefined;
 
 		if (
 			!rawBody ||
 			!verifySignature(rawBody, signature ?? "", deps.webhookSecret)
 		) {
-			return reply.code(401).send({ error: "invalid signature" });
+			return reply.code(401).send({ error: "invalid signature", delivery });
 		}
 
 		let payload: unknown;
 		try {
 			payload = JSON.parse(rawBody.toString("utf8"));
 		} catch {
-			return reply.code(422).send({ error: "invalid json" });
+			return reply.code(422).send({ error: "invalid json", delivery });
 		}
 
 		const ctx = extractTicket(payload as Parameters<typeof extractTicket>[0]);
 		if (!ctx) {
-			return reply
-				.code(400)
-				.send({ error: "invalid payload: missing repo or descricao" });
+			return reply.code(400).send({
+				error: "invalid payload: missing repo or descricao",
+				delivery,
+			});
 		}
 
 		if (!isRepoAllowed(`${ctx.owner}/${ctx.repo}`)) {
-			return reply
-				.code(403)
-				.send({ error: "repo not allowed", repo: `${ctx.owner}/${ctx.repo}` });
+			return reply.code(403).send({
+				error: "repo not allowed",
+				repo: `${ctx.owner}/${ctx.repo}`,
+				delivery,
+			});
 		}
 
 		const bodyHash = createHash("sha256").update(rawBody).digest("hex");
-		if (isDuplicate(bodyHash)) {
-			return reply
-				.code(200)
-				.send({ accepted: true, bodyHash, duplicate: true });
-		}
+		const dryRun = (request.query as { dryRun?: string }).dryRun === "true";
 
 		const input: GenerateIssueInput = {
 			owner: ctx.owner,
@@ -119,8 +112,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 			context: extractContextFields(ctx),
 		};
 
-		const dryRun = (request.query as { dryRun?: string }).dryRun === "true";
-
+		// dryRun keeps the legacy synchronous, in-memory behavior (no DB, no
+		// enqueue) so it can be used for debugging the LLM pipeline without
+		// side effects on the queue.
 		if (dryRun) {
 			try {
 				const proposal = await generateIssue(deps.llm, deps.github, input, {
@@ -132,12 +126,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 				if (!proposal) {
 					return reply.code(200).send({
 						dryRun: true,
+						delivery,
 						bodyHash,
 						result: null,
 					});
 				}
 				return reply.code(200).send({
 					dryRun: true,
+					delivery,
 					bodyHash,
 					repo: { owner: input.owner, name: input.repo },
 					requester: {
@@ -159,43 +155,42 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 				server.log.error({ err: error }, "dryRun processing failed");
 				return reply.code(500).send({
 					error: "processing failed",
+					delivery,
 					detail: (error as Error)?.message ?? String(error),
 				});
 			}
 		}
 
-		void processInBackground(server, deps, input);
+		// Production path (ADR-0008): persist request + queue item BEFORE
+		// answering 202. The UNIQUE(body_hash) constraint is the durable
+		// dedupe (replaces the in-memory ADR-0003 map). A duplicate body
+		// returns the 200 no-op with `duplicate: true`.
+		const queueDeps: QueueDeps = { db: deps.db };
+		const result = enqueueRequest(queueDeps, {
+			bodyHash,
+			deliveryId: delivery,
+			owner: ctx.owner,
+			repo: `${ctx.owner}/${ctx.repo}`,
+			requesterName: ctx.requesterName,
+			requesterEmail: ctx.requesterEmail,
+			payload: rawBody.toString("utf8"),
+		});
 
-		return reply.code(202).send({ accepted: true, bodyHash });
+		if (result.kind === "duplicate") {
+			return reply
+				.code(200)
+				.send({ accepted: true, bodyHash, duplicate: true, delivery });
+		}
+
+		// Worker started in index.ts polls the queue and processes the
+		// request in background; the 202 here only acknowledges persistence.
+		return reply.code(202).send({
+			accepted: true,
+			requestId: result.requestId,
+			bodyHash,
+			delivery,
+		});
 	});
 
 	return server;
-}
-
-async function processInBackground(
-	server: FastifyInstance,
-	deps: ServerDeps,
-	input: GenerateIssueInput,
-): Promise<void> {
-	try {
-		const proposal = await generateIssue(deps.llm, deps.github, input, {
-			onDebug: (msg, data) => {
-				if (data) server.log.debug(data, msg);
-				else server.log.debug(msg);
-			},
-		});
-		if (!proposal) return;
-		const body = buildIssueBody(
-			proposal,
-			input.requesterName,
-			input.requesterEmail,
-		);
-		await deps.github.createIssue(input.owner, input.repo, {
-			title: proposal.title,
-			body,
-			labels: proposal.labels,
-		});
-	} catch (error) {
-		server.log.error({ err: error }, "background processing failed");
-	}
 }

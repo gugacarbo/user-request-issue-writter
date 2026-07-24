@@ -4,7 +4,15 @@ import * as z from "zod";
 
 export const env = createEnv({
 	server: {
-		PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+		PORT: z.coerce
+			.number()
+			.int()
+			.min(1)
+			.max(65535)
+			.default(
+				8080,
+			) /** Path to the SQLite file (or `:memory:`). See ADR-0007. */,
+		DATABASE_PATH: z.string().min(1).default("./data/app.db"),
 		WEBHOOK_SECRET: z.string().min(1),
 		GITHUB_TOKEN: z.string().min(1),
 		LLM_BASE_URL: z.url(),

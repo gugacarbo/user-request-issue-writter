@@ -1,0 +1,28 @@
+# Keep the Docker build context small and avoid leaking local state/secrets.
+# Version control & deps are rehydrated inside the image.
+.git
+.gitignore
+.github
+.husky
+
+# Local state — must never ship in the image.
+.env
+.env.*
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Tests and tooling artifacts (not needed at runtime).
+src/tests/
+coverage/
+*.log
+logs/
+
+# Editor/OS cruft.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

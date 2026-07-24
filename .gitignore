@@ -36,4 +36,11 @@ coverage/
 .cache/
 *.tsbuildinfo
 
+# SQLite database files (ADR-0007). Migrations ARE committed; the runtime
+# database files (and WAL/SHM sidecars) are local state, not source.
+data/
+*.db
+*.db-shm
+*.db-wal
+
 .code-toolbox

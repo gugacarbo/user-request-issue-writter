@@ -3,7 +3,7 @@
 > **Nota:** este documento descreve o plano original (modelo de webhook
 > `issue_comment` do GitHub). O sistema evoluiu para um **ticket custom**
 > assinado com HMAC; consulte o `README.md` para o fluxo atual e
-> `docs/adrs/` para as decisões vigentes.
+> [`docs/adr/`](docs/adr/README.md) para as decisões vigentes.
 
 ## Resumo
 Servidor Node.js/Fastify (TypeScript) para VPS que recebe webhooks
@@ -22,7 +22,7 @@ repositório sob demanda, e cria uma issue no GitHub com o resultado.
 - **Dev tooling (já instalado):** Vitest, Biome, Knip, Husky, tsx, TypeScript.
 
 > Decisões de arquitetura com contexto e alternativas estão em
-> [`docs/adrs/`](docs/adrs/).
+> [`docs/adr/`](docs/adr/README.md) para as decisões vigentes.
 
 ## Configuração (env)
 Variáveis em `.env` (ver `.env.example`):
@@ -38,7 +38,7 @@ Variáveis em `.env` (ver `.env.example`):
 - `LOG_LEVEL` (default `info`)
 
 ### Contrato de env
-> Ver [ADR-0006](docs/adrs/0006-centralized-typed-env-module.md).
+> Ver [`ADR-0006`](docs/adr/0006-centralized-typed-env-module.md).
 - Centralizar toda leitura de `process.env` em `src/env.ts`.
 - Validar obrigatórios no boot (lança cedo se faltar).
 - Exportar um objeto **tipado** `Env` (não passar strings não validadas pelos
@@ -107,7 +107,7 @@ Erros em qualquer etapa → log estruturado, sem crashar o processo.
 Erros síncronos pré-202 respondem 401/422/500; pós-202 ficam só no log.
 
 ## Entrega assíncrona / idempotência
-> Ver [ADR-0003](docs/adrs/0003-202-async-with-in-memory-dedupe.md).
+> Ver [ADR-0003](docs/adr/0003-202-async-with-in-memory-dedupe.md).
 O GitHub reenvia o webhook se o endpoint demorar ou responder falha, e loops
 de LLM com várias tools ultrapassam facilmente o timeout de entrega do GitHub
 (~10s), o que causaria **issues duplicadas**. Para evitar isso:
@@ -166,7 +166,9 @@ Cobertura mínima por módulo, intercalada com a implementação:
 - Múltiplos provedores LLM (Anthropic/Gemini) — só OpenAI-compatible por ora.
 - Outros eventos além de `issue_comment`.
 - Suporte a GitLab/Gitea.
-- Fila persistente/Redis (dedupe em memória atende ao volume baixo atual).
+- ~~Fila persistente/Redis~~ (atendido: fila agora é persistente em SQLite
+  via Drizzle, ver [ADR-0007](adr/0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md)
+  e [ADR-0008](adr/0008-persistent-queue-and-llm-logs-in-sqlite.md)).
 
 ## Ordem de implementação
 1. Adicionar `fastify` ao `package.json`; `env.ts` + `logger.ts` + testes.

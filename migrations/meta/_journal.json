@@ -1,0 +1,27 @@
+{
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "6",
+			"when": 1784912096395,
+			"tag": "0000_create_requests",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1784912117237,
+			"tag": "0001_create_queue",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1784912146771,
+			"tag": "0002_create_llm_logs",
+			"breakpoints": true
+		}
+	]
+}
