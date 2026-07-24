@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import ssePlugin from "@fastify/sse";
 import { fastifyStatic } from "@fastify/static";
 import type { FastifyInstance, FastifyPluginCallback } from "fastify";
@@ -184,15 +183,11 @@ function reverseNewestFirst<T>(xs: readonly T[]): T[] {
 }
 
 function defaultAppDir(): string {
-	// Resolve relative to this source file so it works regardless of cwd
-	// (e.g. when run from dist/index.js). In ESM `import.meta.url` would be
-	// cleaner, but this module is also imported by tests with tsx.
-	try {
-		const here = dirname(fileURLToPath(import.meta.url));
-		return resolve(here, "..", "..", "dist", "app");
-	} catch {
-		return join(process.cwd(), "dist", "app");
-	}
+	// The bundled server runs from `dist/index.js` and the built SPA lives in
+	// `dist/app` side-by-side. Resolving from cwd covers both production
+	// (cwd=/app) and local `pnpm start` (cwd=repo root). Tests use
+	// `serveStatic: false` so they never hit this default.
+	return resolve(process.cwd(), "dist", "app");
 }
 
 /**
