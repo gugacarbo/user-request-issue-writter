@@ -4,7 +4,7 @@
 	"description": "Webhook server that turns GitHub issue comments into issues via an LLM with function calling.",
 	"type": "module",
 	"engines": {
-		"node": ">=20"
+		"node": ">=22"
 	},
 	"scripts": {
 		"dev": "tsx watch src/index.ts",
@@ -24,18 +24,12 @@
 		"app:dev": "vite",
 		"app:build": "vite build",
 		"app:typecheck": "tsc -p src/app/tsconfig.json",
-		"build": "pnpm build:app && pnpm build:server"
+		"build": "pnpm app:build && pnpm build:server"
 	},
 	"keywords": [],
 	"author": "",
 	"license": "MIT",
-	"devEngines": {
-		"packageManager": {
-			"name": "pnpm",
-			"version": "^11.0.9",
-			"onFail": "download"
-		}
-	},
+	"packageManager": "pnpm@11.0.9",
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.5",
 		"@types/better-sqlite3": "^7.6.13",
