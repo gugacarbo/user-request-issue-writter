@@ -12,3 +12,4 @@
 | [ADR-0006](0006-centralized-typed-env-module.md) | ADR-0006: Env centralizado e tipado em `src/env.ts` | accepted |
 | [ADR-0007](0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md) | ADR-0007: SQLite via Drizzle ORM; migrations geradas somente pelo ORM | accepted |
 | [ADR-0008](0008-persistent-queue-and-llm-logs-in-sqlite.md) | ADR-0008: Fila de processamento persistente em SQLite + logs do agente LLM | accepted |
+| [ADR-0009](0009-painel-react-servido-pelo-fastify-com-sse-para-observabilidade-da-fila.md) | Painel React servido pelo Fastify com SSE para observabilidade da fila | accepted |
