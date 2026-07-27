@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 export type TicketContext = {
 	readonly owner: string;
@@ -28,14 +28,21 @@ type TicketPayload = {
 	};
 };
 
-export function verifySignature(
-	rawBody: Buffer,
-	signature: string,
-	secret: string,
-): boolean {
-	if (!signature?.startsWith("sha256=")) return false;
-	const expected = createHmac("sha256", secret).update(rawBody).digest();
-	const provided = Buffer.from(signature.slice("sha256=".length), "hex");
+export function webhookAuthToken(secret: string): string {
+	return createHash("sha256").update(secret).digest("hex");
+}
+
+export function extractBearerToken(
+	authHeader: string | undefined,
+): string | undefined {
+	if (!authHeader?.startsWith("Bearer ")) return undefined;
+	const token = authHeader.slice("Bearer ".length).trim();
+	return token || undefined;
+}
+
+export function verifyAuthToken(token: string, secret: string): boolean {
+	const expected = Buffer.from(webhookAuthToken(secret), "utf8");
+	const provided = Buffer.from(token, "utf8");
 	if (provided.length !== expected.length) return false;
 	return timingSafeEqual(expected, provided);
 }

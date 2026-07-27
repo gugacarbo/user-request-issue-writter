@@ -1,17 +1,15 @@
-import { createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+	extractBearerToken,
 	extractTicket,
 	type TicketContext,
-	verifySignature,
+	verifyAuthToken,
+	webhookAuthToken,
 } from "../web/webhook";
 
 const SECRET = "topsecret";
-
-function sign(body: string, secret: string = SECRET): string {
-	const sig = createHmac("sha256", secret).update(body).digest("hex");
-	return `sha256=${sig}`;
-}
+const TOKEN = webhookAuthToken(SECRET);
 
 const FULL_PAYLOAD = JSON.stringify({
 	repo: "owner/repo",
@@ -27,26 +25,41 @@ const FULL_PAYLOAD = JSON.stringify({
 	},
 });
 
-describe("verifySignature", () => {
-	it("accepts a valid HMAC signature", () => {
-		const raw = Buffer.from(FULL_PAYLOAD);
-		expect(verifySignature(raw, sign(FULL_PAYLOAD), SECRET)).toBe(true);
+describe("webhookAuthToken", () => {
+	it("returns the SHA-256 hex digest of the secret", () => {
+		const expected = createHash("sha256").update(SECRET).digest("hex");
+		expect(webhookAuthToken(SECRET)).toBe(expected);
+	});
+});
+
+describe("extractBearerToken", () => {
+	it("extracts the token from a Bearer header", () => {
+		expect(extractBearerToken(`Bearer ${TOKEN}`)).toBe(TOKEN);
 	});
 
-	it("rejects a divergent signature", () => {
-		const raw = Buffer.from(FULL_PAYLOAD);
-		expect(verifySignature(raw, "sha256=deadbeef", SECRET)).toBe(false);
+	it("returns undefined for missing or malformed headers", () => {
+		expect(extractBearerToken(undefined)).toBeUndefined();
+		expect(extractBearerToken("")).toBeUndefined();
+		expect(extractBearerToken("Basic abc")).toBeUndefined();
+		expect(extractBearerToken("Bearer ")).toBeUndefined();
+	});
+});
+
+describe("verifyAuthToken", () => {
+	it("accepts the SHA-256 digest of the secret", () => {
+		expect(verifyAuthToken(TOKEN, SECRET)).toBe(true);
 	});
 
-	it("rejects a missing signature", () => {
-		expect(verifySignature(Buffer.from(FULL_PAYLOAD), "", SECRET)).toBe(false);
+	it("rejects a divergent token", () => {
+		expect(verifyAuthToken("deadbeef", SECRET)).toBe(false);
+	});
+
+	it("rejects an empty token", () => {
+		expect(verifyAuthToken("", SECRET)).toBe(false);
 	});
 
 	it("rejects when secret differs", () => {
-		const raw = Buffer.from(FULL_PAYLOAD);
-		expect(verifySignature(raw, sign(FULL_PAYLOAD, "other"), SECRET)).toBe(
-			false,
-		);
+		expect(verifyAuthToken(webhookAuthToken("other"), SECRET)).toBe(false);
 	});
 });
 

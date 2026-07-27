@@ -1,10 +1,11 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateIssueResult, GitHubClient } from "../github/github";
 import type { LlmClient } from "../llm/llm";
 import type { IssueProposal } from "../llm/tools";
 import { buildServer, type ServerDeps } from "../web/server";
+import { webhookAuthToken } from "../web/webhook";
 import { makeTestDb, type TestDb } from "./dbTestHelper";
 
 vi.mock("../config/allowlist", () => ({
@@ -12,10 +13,7 @@ vi.mock("../config/allowlist", () => ({
 }));
 
 const SECRET = "topsecret";
-
-function sign(body: string): string {
-	return `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`;
-}
+const TOKEN = webhookAuthToken(SECRET);
 
 function bodyHash(body: string): string {
 	return createHash("sha256").update(body).digest("hex");
@@ -79,9 +77,9 @@ async function app(deps: ServerDeps): Promise<FastifyInstance> {
 	return server;
 }
 
-const baseHeaders = (body: string) => ({
+const baseHeaders = () => ({
 	"content-type": "application/json",
-	"x-hub-signature-256": sign(body),
+	authorization: `Bearer ${TOKEN}`,
 });
 
 describe("server", () => {
@@ -105,15 +103,26 @@ describe("server", () => {
 		expect(res.json()).toEqual({ status: "ok" });
 	});
 
-	it("returns 401 when HMAC signature is invalid", async () => {
+	it("returns 401 when bearer token is invalid", async () => {
 		const body = ticketPayload();
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
 			headers: {
 				"content-type": "application/json",
-				"x-hub-signature-256": "sha256=bad",
+				authorization: "Bearer deadbeef",
 			},
+			payload: body,
+		});
+		expect(res.statusCode).toBe(401);
+	});
+
+	it("returns 401 when authorization header is missing", async () => {
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github",
+			headers: { "content-type": "application/json" },
 			payload: body,
 		});
 		expect(res.statusCode).toBe(401);
@@ -128,7 +137,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(400);
@@ -142,7 +151,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(400);
@@ -155,7 +164,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(403);
@@ -169,7 +178,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(202);
@@ -190,7 +199,7 @@ describe("server", () => {
 		const gh = mockGitHub();
 		server = await app(deps(testDb.db, { github: gh }));
 		const body = ticketPayload();
-		const headers = baseHeaders(body);
+		const headers = baseHeaders();
 		const first = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
@@ -224,7 +233,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github?dryRun=true",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(200);
@@ -258,7 +267,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github?dryRun=true",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(200);
@@ -279,7 +288,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github?dryRun=true",
-			headers: baseHeaders(body),
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(500);
@@ -295,10 +304,7 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: {
-				"content-type": "application/json",
-				"x-hub-signature-256": sign(body),
-			},
+			headers: baseHeaders(),
 			payload: body,
 		});
 		expect(res.statusCode).toBe(202);
@@ -311,24 +317,18 @@ describe("server", () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: {
-				"content-type": "application/json",
-				"x-hub-signature-256": sign("not-json"),
-			},
+			headers: baseHeaders(),
 			payload: "not-json",
 		});
 		expect(res.statusCode).toBe(422);
 	});
 
-	it("returns 401 when raw body is missing", async () => {
+	it("returns 400 when raw body is missing", async () => {
 		const res = await server.inject({
 			method: "POST",
 			url: "/webhook/github",
-			headers: {
-				"content-type": "application/json",
-				"x-hub-signature-256": "sha256=abc",
-			},
+			headers: baseHeaders(),
 		});
-		expect(res.statusCode).toBe(401);
+		expect(res.statusCode).toBe(400);
 	});
 });

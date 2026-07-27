@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import ssePlugin from "@fastify/sse";
 import { fastifyStatic } from "@fastify/static";
-import type { FastifyInstance, FastifyPluginCallback } from "fastify";
+import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import type { DB } from "../db";
 import {
 	countByStatus,
@@ -35,17 +35,16 @@ export type DashboardPluginDeps = {
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 
-const dashboardPlugin: FastifyPluginCallback<DashboardPluginDeps> = (
+const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 	server,
 	opts,
-	done,
 ) => {
 	const dashboardDeps: DashboardDeps = { db: opts.db };
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
 	// @fastify/sse must be registered before SSE routes. Scoped to this
 	// plugin so it doesn't leak into the webhook routes.
-	server.register(ssePlugin);
+	await server.register(ssePlugin);
 
 	// --- JSON mirrors (handy for curl / non-SSE) ---------------------------
 	server.get("/app/api/state", async () => {
@@ -148,7 +147,7 @@ const dashboardPlugin: FastifyPluginCallback<DashboardPluginDeps> = (
 	if (opts.serveStatic) {
 		const dir = opts.appStaticDir ?? defaultAppDir();
 		if (existsSync(dir)) {
-			server.register(fastifyStatic, {
+			await server.register(fastifyStatic, {
 				root: dir,
 				prefix: "/app/",
 				wildcard: false,
@@ -168,8 +167,6 @@ const dashboardPlugin: FastifyPluginCallback<DashboardPluginDeps> = (
 			);
 		}
 	}
-
-	done();
 };
 
 /**

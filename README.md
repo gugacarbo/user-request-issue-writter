@@ -86,6 +86,25 @@ cp .env.example .env  # preencha
 docker compose up -d --build
 ```
 
+#### Easypanel
+
+O app escuta em `0.0.0.0` na porta definida por `PORT` (padrão **8080**). No
+painel do serviço:
+
+1. **Environment** — defina `PORT=8080` (ou omita e use o padrão) e as demais
+   variáveis do `.env.example`.
+2. **Domains → proxy port** — use a **mesma** porta que `PORT` (ex.: `8080`).
+   Se o proxy apontar para outra porta, o Traefik retorna 502 e o app pode
+   logar requisições internas sem responder ao domínio público.
+3. **Volume** — monte `/app/data` para persistir o SQLite entre deploys.
+
+Valide após o deploy:
+
+```sh
+curl https://seu-dominio.easypanel.host/health
+# {"status":"ok"}
+```
+
 Alternativa sem Docker:
 
 ```sh

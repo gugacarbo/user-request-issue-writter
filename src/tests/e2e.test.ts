@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import {
 	afterAll,
@@ -14,6 +13,7 @@ import type { CreateIssueResult, GitHubClient } from "../github/github";
 import { createOpenAiLlmClient } from "../llm/openai";
 import { startWorker, type WorkerHandle } from "../queue/worker";
 import { buildServer, type ServerDeps } from "../web/server";
+import { webhookAuthToken } from "../web/webhook";
 import { makeTestDb, type TestDb } from "./dbTestHelper";
 
 vi.mock("../config/allowlist", () => ({
@@ -133,8 +133,10 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 		createdIssue = null;
 	});
 
-	function sign(body: string): string {
-		return `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex")}`;
+	function authHeaders(): Record<string, string> {
+		return {
+			authorization: `Bearer ${webhookAuthToken(WEBHOOK_SECRET)}`,
+		};
 	}
 
 	function ticketBody(
@@ -159,7 +161,7 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-hub-signature-256": sign(body),
+				...authHeaders(),
 				"x-delivery-id": "e2e-001",
 			},
 			body,
@@ -194,7 +196,7 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-hub-signature-256": sign(body),
+				...authHeaders(),
 				"x-delivery-id": "e2e-002",
 			},
 			body,
@@ -208,7 +210,7 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 			method: "POST",
 			headers: {
 				"content-type": "application/json",
-				"x-hub-signature-256": sign(body),
+				...authHeaders(),
 				"x-delivery-id": "e2e-003",
 			},
 			body,

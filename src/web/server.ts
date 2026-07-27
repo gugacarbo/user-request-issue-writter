@@ -11,7 +11,7 @@ import {
 } from "../llm/llm";
 import { enqueueRequest, type QueueDeps } from "../queue/queue";
 import { type DashboardPluginDeps, registerDashboard } from "./dashboard";
-import { extractTicket, type TicketContext, verifySignature } from "./webhook";
+import { extractTicket, extractBearerToken, type TicketContext, verifyAuthToken } from "./webhook";
 
 export type ServerDeps = {
 	readonly github: GitHubClient;
@@ -61,6 +61,8 @@ function buildIssueBody(
 export function buildServer(deps: ServerDeps): FastifyInstance {
 	const server = Fastify({
 		logger: deps.logger === undefined ? false : deps.logger,
+		// Behind Easypanel/Caddy/Nginx reverse proxies (README production path).
+		trustProxy: true,
 	});
 
 	server.addContentTypeParser(
@@ -72,17 +74,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 	server.get("/health", async () => ({ status: "ok" }));
 
 	server.post("/webhook/github", async (request, reply) => {
-		const signature = request.headers["x-hub-signature-256"] as
-			| string
-			| undefined;
+		const token = extractBearerToken(request.headers.authorization);
 		const delivery = (request.headers["x-delivery-id"] as string) ?? undefined;
 		const rawBody = request.body as Buffer | undefined;
 
-		if (
-			!rawBody ||
-			!verifySignature(rawBody, signature ?? "", deps.webhookSecret)
-		) {
-			return reply.code(401).send({ error: "invalid signature", delivery });
+		if (!token || !verifyAuthToken(token, deps.webhookSecret)) {
+			return reply.code(401).send({ error: "unauthorized", delivery });
+		}
+
+		if (!rawBody?.length) {
+			return reply.code(400).send({ error: "missing body", delivery });
 		}
 
 		let payload: unknown;
