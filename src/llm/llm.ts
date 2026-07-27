@@ -61,7 +61,7 @@ export type GenerateIssueOptions = {
 
 type DebugLog = (message: string, data?: Record<string, unknown>) => void;
 
-const DEFAULT_MAX_ITERATIONS = 15;
+const DEFAULT_MAX_ITERATIONS = 200;
 
 const SYSTEM_PROMPT = [
 	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user-submitted ticket.",

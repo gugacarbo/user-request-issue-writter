@@ -1,4 +1,4 @@
-import { desc, eq, gt } from "drizzle-orm";
+import { asc, desc, eq, gt } from "drizzle-orm";
 import type { DB } from "../db";
 import { llmLogs, queue as queueTable, requests } from "../db/schema";
 
@@ -132,6 +132,88 @@ export function listLlmLogsSince(
 		.orderBy(desc(llmLogs.id))
 		.limit(limit)
 		.all();
+}
+
+export type QueueRow = {
+	id: number;
+	requestId: number;
+	status: string;
+	attempts: number;
+	lastError: string | null;
+	nextRunAt: number;
+	createdAt: number;
+	updatedAt: number;
+};
+
+/**
+ * Full detail of one agent run: the immutable request, its queue item, and the
+ * ordered LLM agent log lines (oldest-first for run replay). Powers the run
+ * dialog opened when a queue row is clicked. Returns `null` when the request
+ * id does not exist.
+ */
+export type RunDetail = {
+	request: RequestRow;
+	queue: QueueRow | null;
+	logs: LlmLogRow[];
+};
+
+export function getRequestRun(
+	deps: DashboardDeps,
+	requestId: number,
+): RunDetail | null {
+	const request = deps.db
+		.select({
+			id: requests.id,
+			bodyHash: requests.bodyHash,
+			deliveryId: requests.deliveryId,
+			repo: requests.repo,
+			owner: requests.owner,
+			requesterName: requests.requesterName,
+			requesterEmail: requests.requesterEmail,
+			status: requests.status,
+			issueNumber: requests.issueNumber,
+			issueUrl: requests.issueUrl,
+			attempts: requests.attempts,
+			lastError: requests.lastError,
+			createdAt: requests.createdAt,
+			updatedAt: requests.updatedAt,
+		})
+		.from(requests)
+		.where(eq(requests.id, requestId))
+		.get();
+	if (!request) return null;
+
+	const queue = deps.db
+		.select({
+			id: queueTable.id,
+			requestId: queueTable.requestId,
+			status: queueTable.status,
+			attempts: queueTable.attempts,
+			lastError: queueTable.lastError,
+			nextRunAt: queueTable.nextRunAt,
+			createdAt: queueTable.createdAt,
+			updatedAt: queueTable.updatedAt,
+		})
+		.from(queueTable)
+		.where(eq(queueTable.requestId, requestId))
+		.get();
+
+	const logs = deps.db
+		.select({
+			id: llmLogs.id,
+			requestId: llmLogs.requestId,
+			iteration: llmLogs.iteration,
+			event: llmLogs.event,
+			toolName: llmLogs.toolName,
+			data: llmLogs.data,
+			createdAt: llmLogs.createdAt,
+		})
+		.from(llmLogs)
+		.where(eq(llmLogs.requestId, requestId))
+		.orderBy(asc(llmLogs.createdAt), asc(llmLogs.id))
+		.all();
+
+	return { request, queue, logs };
 }
 
 /** Recent requests, newest first (used for the requests panel). */
