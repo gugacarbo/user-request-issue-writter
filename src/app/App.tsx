@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { CountsCards } from "./CountsCards";
+import { ModeToggle } from "./components/mode-toggle";
 import { LogsPanel } from "./LogsPanel";
 import { QueueTable } from "./QueueTable";
 import { RunDialog } from "./RunDialog";
@@ -28,8 +32,6 @@ export function App() {
 		null,
 	);
 
-	// Append new log lines (dedup by id) to keep a growing buffer the
-	// LogsPanel can tail.
 	useEffect(() => {
 		const incoming = logs.data?.logs;
 		if (!incoming || incoming.length === 0) return;
@@ -42,7 +44,6 @@ export function App() {
 					seen.add(l.id);
 				}
 			}
-			// Keep the tail bounded.
 			return next.slice(-1000);
 		});
 	}, [logs.data]);
@@ -60,44 +61,69 @@ export function App() {
 	);
 
 	const llmModel = queue.data?.llmModel;
+	const isLive = queue.connected && logs.connected;
 
 	return (
-		<main className="app">
-			<header className="topbar">
-				<div className="topbar-main">
-					<h1>Fila de solicitações</h1>
+		<main className="mx-auto max-w-5xl p-4">
+			<header className="mb-4 flex items-center justify-between gap-3 border-b pb-3">
+				<div className="flex min-w-0 flex-wrap items-center gap-3">
+					<h1 className="text-lg font-semibold">Fila de solicitações</h1>
 					{llmModel ? (
-						<span className="model-badge" title="Modelo LLM configurado">
-							<span className="model-label">LLM</span>
-							<code>{llmModel}</code>
-						</span>
+						<Badge
+							variant="outline"
+							className="max-w-full gap-1.5"
+							title="Modelo LLM configurado"
+						>
+							<span className="font-semibold text-foreground">LLM</span>
+							<code className="truncate font-mono text-primary">
+								{llmModel}
+							</code>
+						</Badge>
 					) : null}
 				</div>
-				<div className="conn">
-					<span
-						className={`dot ${queue.connected && logs.connected ? "live" : "down"}`}
-						aria-hidden
-					/>
-					{queue.connected && logs.connected ? "ao vivo" : "reconectando…"}
+				<div className="flex items-center gap-2">
+					<div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+						<span
+							className={cn(
+								"size-2 rounded-full",
+								isLive
+									? "bg-green-500 shadow-[0_0_0_3px] shadow-green-500/15"
+									: "bg-yellow-500",
+							)}
+							aria-hidden
+						/>
+						{isLive ? "ao vivo" : "reconectando…"}
+					</div>
+					<ModeToggle />
 				</div>
 			</header>
 
 			<CountsCards counts={counts} />
 
-			<section className="panel">
-				<h2>Solicitações</h2>
-				<QueueTable
-					rows={queueRows}
-					onSelect={(r) => setSelectedRequestId(r.requestId)}
-				/>
-			</section>
+			<Card className="mb-4">
+				<CardHeader>
+					<CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+						Solicitações
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<QueueTable
+						rows={queueRows}
+						onSelect={(r) => setSelectedRequestId(r.requestId)}
+					/>
+				</CardContent>
+			</Card>
 
-			<section className="panel">
-				<h2>Logs do agente LLM</h2>
-				<div className="logs-wrap">
+			<Card className="mb-4">
+				<CardHeader>
+					<CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+						Logs do agente LLM
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="pt-0">
 					<LogsPanel logs={allLogs} />
-				</div>
-			</section>
+				</CardContent>
+			</Card>
 
 			{selectedRequestId !== null && (
 				<RunDialog

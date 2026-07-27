@@ -11,10 +11,16 @@
 			"**",
 			"!docs/index.json",
 			"!docs/**/README.md",
+			"!src/app/components/ui",
 			"!!**/dist",
 			"!!**/coverage",
 			"!!**/data"
 		]
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
 	},
 	"formatter": {
 		"enabled": true,

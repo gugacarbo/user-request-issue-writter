@@ -1,3 +1,11 @@
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
 import { StatusBadge } from "./StatusBadge";
 import type { QueueSummaryRow } from "./types";
 
@@ -15,60 +23,68 @@ export function QueueTable({
 	onSelect?: (row: QueueSummaryRow) => void;
 }) {
 	if (rows.length === 0) {
-		return <p className="empty">Nenhuma solicitação na fila ainda.</p>;
+		return (
+			<p className="text-sm text-muted-foreground">
+				Nenhuma solicitação na fila ainda.
+			</p>
+		);
 	}
 	return (
-		<table className="queue-table">
-			<thead>
-				<tr>
-					<th>#</th>
-					<th>repo</th>
-					<th>requester</th>
-					<th>status</th>
-					<th>attempts</th>
-					<th>issue</th>
-					<th>erro</th>
-					<th>updated</th>
-				</tr>
-			</thead>
-			<tbody>
+		<Table>
+			<TableHeader>
+				<TableRow>
+					<TableHead>#</TableHead>
+					<TableHead>repo</TableHead>
+					<TableHead>requester</TableHead>
+					<TableHead>status</TableHead>
+					<TableHead>attempts</TableHead>
+					<TableHead>issue</TableHead>
+					<TableHead>erro</TableHead>
+					<TableHead>updated</TableHead>
+				</TableRow>
+			</TableHeader>
+			<TableBody>
 				{rows.map((r) => (
-					<tr
+					<TableRow
 						key={r.id}
-						className={onSelect ? "clickable" : undefined}
+						className={onSelect ? "cursor-pointer" : undefined}
 						onClick={
 							onSelect
 								? (e) => {
-										// Don't open the dialog when clicking the issue link.
 										if ((e.target as HTMLElement).closest("a")) return;
 										onSelect(r);
 									}
 								: undefined
 						}
 					>
-						<td>{r.requestId}</td>
-						<td>{r.repo ?? "—"}</td>
-						<td>{r.requesterName ?? "—"}</td>
-						<td>
+						<TableCell>{r.requestId}</TableCell>
+						<TableCell>{r.repo ?? "—"}</TableCell>
+						<TableCell>{r.requesterName ?? "—"}</TableCell>
+						<TableCell>
 							<StatusBadge status={r.status} />
-						</td>
-						<td>{r.attempts}</td>
-						<td>
+						</TableCell>
+						<TableCell>{r.attempts}</TableCell>
+						<TableCell>
 							{r.issueNumber ? (
-								<a href={r.issueUrl ?? "#"} target="_blank" rel="noreferrer">
+								<a
+									href={r.issueUrl ?? "#"}
+									target="_blank"
+									rel="noreferrer"
+									className="text-primary hover:underline"
+								>
 									#{r.issueNumber}
 								</a>
 							) : (
 								"—"
 							)}
-						</td>
-						<td className="err" title={r.lastError ?? ""}>
+						</TableCell>
+						<TableCell className="text-destructive" title={r.lastError ?? ""}>
 							{r.lastError ? "ver" : "—"}
-						</td>
-						<td>{formatTime(r.updatedAt)}</td>
-					</tr>
+						</TableCell>
+						<TableCell>{formatTime(r.updatedAt)}</TableCell>
+					</TableRow>
 				))}
-			</tbody>
-		</table>
+			</TableBody>
+		</Table>
 	);
 }
