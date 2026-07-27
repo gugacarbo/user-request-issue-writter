@@ -1,6 +1,12 @@
-import { useMemo } from "react";
+import { ListIcon, MessagesSquareIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
+import { LogsChatPanel } from "./LogsChatPanel";
 import type { LlmLogRow } from "./types";
+
+type LogsView = "list" | "chat";
 
 function formatTime(unixSeconds: number): string {
 	if (!unixSeconds) return "—";
@@ -32,19 +38,17 @@ function summarizeData(data: Record<string, unknown> | null): string {
 	return `${String(first)}: ${s.length > 120 ? `${s.slice(0, 120)}…` : s}`;
 }
 
-export function LogsPanel({
+function LogsListView({
 	logs,
 	className,
 }: {
 	logs: LlmLogRow[];
 	className?: string;
 }) {
-	const capped = useMemo(() => logs.slice(-300), [logs]);
-
 	return (
 		<ScrollArea className={className ?? "h-[360px]"}>
 			<ol className="m-0 list-none p-2 font-mono text-xs leading-relaxed">
-				{capped.map((l) => (
+				{logs.map((l) => (
 					<li key={l.id} className="flex gap-2 px-2 py-0.5 hover:bg-muted/50">
 						<span className="shrink-0 text-muted-foreground">
 							{formatTime(l.createdAt)}
@@ -70,5 +74,54 @@ export function LogsPanel({
 				))}
 			</ol>
 		</ScrollArea>
+	);
+}
+
+export function LogsPanel({
+	logs,
+	className,
+	showViewToggle = true,
+}: {
+	logs: LlmLogRow[];
+	className?: string;
+	showViewToggle?: boolean;
+}) {
+	const [view, setView] = useState<LogsView>("list");
+	const capped = useMemo(() => logs.slice(-300), [logs]);
+	const panelHeight = className ?? "h-[360px]";
+
+	return (
+		<div className="space-y-2">
+			{showViewToggle ? (
+				<div className="flex justify-end gap-1">
+					<Button
+						type="button"
+						variant={view === "list" ? "secondary" : "ghost"}
+						size="sm"
+						onClick={() => setView("list")}
+					>
+						<ListIcon className="size-3.5" />
+						Lista
+					</Button>
+					<Button
+						type="button"
+						variant={view === "chat" ? "secondary" : "ghost"}
+						size="sm"
+						onClick={() => setView("chat")}
+					>
+						<MessagesSquareIcon className="size-3.5" />
+						Chat
+					</Button>
+				</div>
+			) : null}
+
+			<div className={cn(panelHeight, "min-h-0")}>
+				{view === "list" ? (
+					<LogsListView logs={capped} className={panelHeight} />
+				) : (
+					<LogsChatPanel logs={capped} className={panelHeight} />
+				)}
+			</div>
+		</div>
 	);
 }

@@ -12,6 +12,10 @@ function mockGitHub(): GitHubClient {
 			readme: "# demo",
 		})),
 		createIssue: vi.fn(async () => ({ number: 1, url: "x" })),
+		uploadRepositoryFile: vi.fn(
+			async () =>
+				"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+		),
 	};
 }
 

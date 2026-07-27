@@ -84,6 +84,10 @@ describe.skipIf(!canRunE2e)("e2e: webhook → real LLM → mocked GitHub", () =>
 				};
 			},
 		),
+		uploadRepositoryFile: vi.fn(
+			async () =>
+				"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+		),
 	};
 
 	beforeAll(async () => {

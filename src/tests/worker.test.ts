@@ -54,6 +54,10 @@ function mockGitHub(
 			readme: null,
 		})),
 		createIssue: vi.fn(async () => issue),
+		uploadRepositoryFile: vi.fn(
+			async () =>
+				"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+		),
 	};
 }
 
@@ -134,6 +138,19 @@ describe("worker", () => {
 	}, 10_000);
 
 	it("embeds optional screenshot in the created issue body", async () => {
+		const pngBytes = Buffer.from(
+			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+			"base64",
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => ({
+				ok: true,
+				headers: new Headers({ "content-type": "image/png" }),
+				arrayBuffer: async () => pngBytes.buffer,
+			})),
+		);
+
 		const gh = mockGitHub({ number: 7, url: "https://example/7" });
 		const llm = mockLlm({
 			title: "Bug",
@@ -176,13 +193,15 @@ describe("worker", () => {
 			.calls[0]?.[2] as { body: string } | undefined;
 		expect(createIssueArgs?.body).toContain("## Screenshot");
 		expect(createIssueArgs?.body).toContain(
-			"![Screenshot](https://cdn.example.com/shot.png)",
+			"![Screenshot](https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png)",
 		);
 		expect(createIssueArgs?.body).toContain("The login button is broken");
+		expect(gh.uploadRepositoryFile).toHaveBeenCalled();
 
 		await vi.waitFor(() => {
 			expect(getRequest({ db: testDb.db }, requestId)?.status).toBe("done");
 		});
+		vi.unstubAllGlobals();
 	}, 10_000);
 
 	it("marks failed when the agent does not call submit_issue", async () => {

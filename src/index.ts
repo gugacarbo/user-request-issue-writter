@@ -24,6 +24,8 @@ async function main(): Promise<void> {
 			model: env.LLM_MODEL,
 		}),
 		webhookSecret: env.WEBHOOK_SECRET,
+		nocobaseToken: env.NOCOBASE_TOKEN,
+		nocobasePublicUrl: env.NOCOBASE_PUBLIC_URL,
 		db,
 		logger: { level: env.LOG_LEVEL },
 		// Serve the built SPA (dist/app) and stream queue/logs over SSE when
@@ -42,6 +44,8 @@ async function main(): Promise<void> {
 			apiKey: env.LLM_API_KEY,
 			model: env.LLM_MODEL,
 		}),
+		nocobaseToken: env.NOCOBASE_TOKEN,
+		nocobasePublicUrl: env.NOCOBASE_PUBLIC_URL,
 		log: (level, msg, data) => server.log[level]({ data }, msg),
 	});
 

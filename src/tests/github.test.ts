@@ -171,6 +171,32 @@ describe("github client", () => {
 		expect(JSON.parse(calls[1].body).labels).toBeUndefined();
 	});
 
+	it("uploadRepositoryFile returns the hosted download URL", async () => {
+		const mock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input.url;
+			if (url.includes("/contents/") && init?.method === "PUT") {
+				return jsonResponse({
+					content: {
+						download_url:
+							"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+					},
+				});
+			}
+			return jsonResponse({});
+		});
+		vi.stubGlobal("fetch", mock);
+		const { createGitHubClient } = await import("../github/github");
+		const gh = createGitHubClient(TOKEN);
+		const url = await gh.uploadRepositoryFile(
+			"owner",
+			"repo",
+			".github/issue-screenshots/test.png",
+			Buffer.from("abc"),
+			"Add issue screenshot",
+		);
+		expect(url).toContain("issue-screenshots/test.png");
+	});
+
 	it("getJson throws with status and body on non-ok response", async () => {
 		const mock = vi.fn(async () =>
 			jsonResponse({ message: "Not Found" }, { status: 404, ok: false }),

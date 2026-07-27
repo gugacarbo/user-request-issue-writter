@@ -24,6 +24,7 @@ describe("issue template", () => {
 		expect(formatScreenshotMarkdown("data:image/png;base64,abc")).toBe(
 			"![Screenshot](data:image/png;base64,abc)",
 		);
+		expect(formatScreenshotMarkdown("https://crm.atplus.cloud")).toBeNull();
 		expect(formatScreenshotMarkdown("   ")).toBeNull();
 	});
 
@@ -31,7 +32,8 @@ describe("issue template", () => {
 		const body = buildIssueBody({
 			agentBody: "## Resumo\nLogin broken.",
 			rawUserMessage: "The login button is broken.",
-			screenshot: "https://cdn.example.com/shot.png",
+			screenshotMarkdown:
+				"![Screenshot](https://cdn.example.com/shot.png)",
 			requesterName: "Alice",
 			requesterEmail: "alice@example.com",
 		});

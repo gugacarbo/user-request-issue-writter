@@ -38,6 +38,13 @@ export type GitHubClient = {
 		repo: string,
 		input: CreateIssueInput,
 	) => Promise<CreateIssueResult>;
+	readonly uploadRepositoryFile: (
+		owner: string,
+		repo: string,
+		path: string,
+		content: Buffer,
+		message: string,
+	) => Promise<string>;
 };
 
 function authHeaders(token: string): Record<string, string> {
@@ -140,6 +147,38 @@ export function createGitHubClient(token: string): GitHubClient {
 			}
 			const data = (await res.json()) as { number: number; html_url: string };
 			return { number: data.number, url: data.html_url };
+		},
+
+		async uploadRepositoryFile(owner, repo, path, content, message) {
+			const encodedPath = path
+				.split("/")
+				.map((segment) => encodeURIComponent(segment))
+				.join("/");
+			const url = `${GITHUB_API}/repos/${owner}/${repo}/contents/${encodedPath}`;
+			const body = {
+				message,
+				content: content.toString("base64"),
+			};
+			const res = await request(url, {
+				method: "PUT",
+				body: JSON.stringify(body),
+			});
+			if (res.status === 422) {
+				const existing = await getJson<{ download_url?: string }>(url);
+				if (existing.download_url) return existing.download_url;
+			}
+			if (!res.ok) {
+				const text = await res.text().catch(() => "");
+				throw new Error(`GitHub uploadRepositoryFile ${res.status}: ${text}`);
+			}
+			const data = (await res.json()) as {
+				content?: { download_url?: string };
+			};
+			const downloadUrl = data.content?.download_url;
+			if (!downloadUrl) {
+				throw new Error("GitHub uploadRepositoryFile: missing download_url");
+			}
+			return downloadUrl;
 		},
 	};
 }

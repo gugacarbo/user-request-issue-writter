@@ -20,6 +20,12 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": resolve(__dirname, "src", "app"),
+			"@agent-elements": resolve(
+				__dirname,
+				"src",
+				"components",
+				"agent-elements",
+			),
 		},
 	},
 	server: {

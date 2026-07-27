@@ -11,6 +11,10 @@ function mockGitHub(overrides: Partial<GitHubClient> = {}): GitHubClient {
 			readme: "# demo",
 		})),
 		createIssue: vi.fn(async () => ({ number: 1, url: "https://example/1" })),
+		uploadRepositoryFile: vi.fn(
+			async () =>
+				"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+		),
 		...overrides,
 	};
 }

@@ -30,6 +30,8 @@ Copie `.env.example` para `.env` e preencha:
 | `LLM_API_KEY`    | sim         | —               | Chave da API LLM                                                                                                    |
 | `LLM_MODEL`      | sim         | —               | Ex.: `gpt-4o-mini`                                                                                                  |
 | `LOG_LEVEL`      | não         | `info`          | Nível do pino                                                                                                       |
+| `NOCOBASE_TOKEN` | não         | —               | Token para buscar anexos de screenshot no NocoBase (URLs em `crm.atplus.cloud`)                                     |
+| `NOCOBASE_PUBLIC_URL` | não    | —               | Origem pública do NocoBase (ex.: `https://crm.atplus.cloud`) para resolver paths relativos de anexo                 |
 | `DATABASE_PATH`  | não         | `./data/app.db` | Caminho do SQLite (ou `:memory:`). Veja [ADR-0007](docs/adr/0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md). |
 
 ## Enviando um ticket
@@ -51,10 +53,15 @@ Formato do corpo:
     "contexto_da_sessao": "Chrome 120 on macOS",
     "logs_do_console": "TypeError: ...",
     "logs_de_rede": "POST /api/login 500",
-    "screenshot": "https://..."
+    "screenshot": "https://cdn.example.com/shot.png"
   }
 }
 ```
+
+`screenshot` must be a direct image URL (`https://…/file.png`), a NocoBase
+storage path (`/storage/uploads/…`), a `data:image/…` URI, or an attachment
+object/array with a `url` field. Bare site origins (e.g. `https://crm.atplus.cloud`)
+are ignored.
 
 Somente `repo` (no formato `owner/repo`) e `payload.descricao` são
 obrigatórios; os demais campos são opcionais e enriquecem o contexto

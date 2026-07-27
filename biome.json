@@ -12,6 +12,7 @@
 			"!docs/index.json",
 			"!docs/**/README.md",
 			"!src/app/components/ui",
+			"!src/components/agent-elements",
 			"!!**/dist",
 			"!!**/coverage",
 			"!!**/data"

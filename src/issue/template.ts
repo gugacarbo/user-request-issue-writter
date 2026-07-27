@@ -11,16 +11,15 @@ export const AGENT_ISSUE_SECTIONS = [
 	"## Abordagem sugerida",
 ] as const;
 
+import { isEmbeddableScreenshot } from "./screenshot";
+
 const RAW_USER_MESSAGE_HEADING = "## Mensagem original do usuário";
 const SCREENSHOT_HEADING = "## Screenshot";
 
 export function formatScreenshotMarkdown(screenshot: string): string | null {
 	const value = screenshot.trim();
-	if (!value) return null;
-	if (/^https?:\/\//i.test(value) || value.startsWith("data:image/")) {
-		return `![Screenshot](${value})`;
-	}
-	return value;
+	if (!value || !isEmbeddableScreenshot(value)) return null;
+	return `![Screenshot](${value})`;
 }
 
 export function agentIssueBodyInstructions(): string {
@@ -36,6 +35,8 @@ export function agentIssueBodyInstructions(): string {
 export type BuildIssueBodyInput = {
 	readonly agentBody: string;
 	readonly rawUserMessage: string;
+	/** Pre-rendered screenshot markdown (preferred — already hosted for GitHub). */
+	readonly screenshotMarkdown?: string | null;
 	readonly screenshot?: string;
 	readonly requesterName: string;
 	readonly requesterEmail: string;
@@ -47,9 +48,9 @@ export function buildIssueBody(input: BuildIssueBodyInput): string {
 		? [RAW_USER_MESSAGE_HEADING, "", rawMessage, ""]
 		: [];
 
-	const screenshotMarkdown = input.screenshot
-		? formatScreenshotMarkdown(input.screenshot)
-		: null;
+	const screenshotMarkdown =
+		input.screenshotMarkdown ??
+		(input.screenshot ? formatScreenshotMarkdown(input.screenshot) : null);
 	const screenshotSection = screenshotMarkdown
 		? [SCREENSHOT_HEADING, "", screenshotMarkdown, ""]
 		: [];

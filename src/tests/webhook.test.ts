@@ -123,6 +123,42 @@ describe("extractTicket", () => {
 		expect(ctx.requesterEmail).toBe("");
 	});
 
+	it("normalizes screenshot attachment objects", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			payload: {
+				descricao: "test",
+				screenshot: [{ url: "https://cdn.example.com/shot.png" }],
+			},
+		}) as TicketContext;
+		expect(ctx.screenshot).toBe("https://cdn.example.com/shot.png");
+	});
+
+	it("forwards base URL screenshot to urlAtual when url_atual is missing", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			payload: {
+				descricao: "test",
+				screenshot: "https://crm.atplus.cloud",
+			},
+		}) as TicketContext;
+		expect(ctx.screenshot).toBeUndefined();
+		expect(ctx.urlAtual).toBe("https://crm.atplus.cloud");
+	});
+
+	it("drops base URL screenshot when url_atual is already set", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			payload: {
+				descricao: "test",
+				url_atual: "https://crm2.atplus.cloud/cs/negociacoes",
+				screenshot: "https://crm.atplus.cloud",
+			},
+		}) as TicketContext;
+		expect(ctx.screenshot).toBeUndefined();
+		expect(ctx.urlAtual).toBe("https://crm2.atplus.cloud/cs/negociacoes");
+	});
+
 	it("treats empty optional strings as undefined", () => {
 		const ctx = extractTicket({
 			repo: "owner/repo",

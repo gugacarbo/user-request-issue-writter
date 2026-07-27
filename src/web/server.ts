@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { isRepoAllowed } from "../config/allowlist";
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
+import { prepareScreenshotMarkdown } from "../issue/screenshot";
 import { buildIssueBody } from "../issue/template";
 import {
 	type GenerateIssueInput,
@@ -23,6 +24,8 @@ export type ServerDeps = {
 	readonly github: GitHubClient;
 	readonly llm: LlmClient;
 	readonly webhookSecret: string;
+	readonly nocobaseToken?: string;
+	readonly nocobasePublicUrl?: string;
 	/**
 	 * Persistent DB handle (ADR-0007/0008). Required for the production path:
 	 * the webhook enqueues the request+queue item in SQLite BEFORE answering
@@ -86,7 +89,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 			return reply.code(422).send({ error: "invalid json", delivery });
 		}
 
-		const ctx = extractTicket(payload as Parameters<typeof extractTicket>[0]);
+		const ctx = extractTicket(payload as Parameters<typeof extractTicket>[0], {
+			nocobasePublicUrl: deps.nocobasePublicUrl,
+		});
 		if (!ctx) {
 			return reply.code(400).send({
 				error: "invalid payload: missing repo or descricao",
@@ -133,6 +138,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 						result: null,
 					});
 				}
+				const screenshotMarkdown = await prepareScreenshotMarkdown({
+					screenshot: ctx.screenshot,
+					owner: input.owner,
+					repo: input.repo,
+					github: deps.github,
+					nocobaseToken: deps.nocobaseToken,
+					nocobasePublicUrl: deps.nocobasePublicUrl,
+				});
 				return reply.code(200).send({
 					dryRun: true,
 					delivery,
@@ -148,7 +161,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 						body: buildIssueBody({
 							agentBody: proposal.body,
 							rawUserMessage: input.descricao,
-							screenshot: ctx.screenshot,
+							screenshotMarkdown,
 							requesterName: input.requesterName,
 							requesterEmail: input.requesterEmail,
 						}),

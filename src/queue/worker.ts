@@ -1,5 +1,6 @@
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
+import { prepareScreenshotMarkdown } from "../issue/screenshot";
 import { buildIssueBody } from "../issue/template";
 import type { GenerateIssueInput, IssueContext, LlmClient } from "../llm/llm";
 import { generateIssue } from "../llm/llm";
@@ -17,6 +18,10 @@ export type WorkerDeps = {
 	readonly db: DB;
 	readonly github: GitHubClient;
 	readonly llm: LlmClient;
+	/** Optional NocoBase token to fetch authenticated screenshot attachments. */
+	readonly nocobaseToken?: string;
+	/** Public NocoBase origin used to resolve relative attachment paths. */
+	readonly nocobasePublicUrl?: string;
 	/** Poll interval in ms (default 1000). */
 	readonly pollIntervalMs?: number;
 	/** Hard cap on attempts before giving up (default 3). */
@@ -107,7 +112,7 @@ async function processOne(
 		return;
 	}
 
-	const ticket = parseStoredTicket(request.payload);
+	const ticket = parseStoredTicket(request.payload, deps.nocobasePublicUrl);
 	if (!ticket) {
 		finalizeProcessing(queueDeps, {
 			queueId,
@@ -154,10 +159,18 @@ async function processOne(
 			return;
 		}
 
+		const screenshotMarkdown = await prepareScreenshotMarkdown({
+			screenshot: ticket.screenshot,
+			owner: input.owner,
+			repo: input.repo,
+			github: deps.github,
+			nocobaseToken: deps.nocobaseToken,
+			nocobasePublicUrl: deps.nocobasePublicUrl,
+		});
 		const body = buildIssueBody({
 			agentBody: proposal.body,
 			rawUserMessage: input.descricao,
-			screenshot: ticket.screenshot,
+			screenshotMarkdown,
 			requesterName: input.requesterName,
 			requesterEmail: input.requesterEmail,
 		});
@@ -190,10 +203,11 @@ async function processOne(
 	}
 }
 
-function parseStoredTicket(payloadJson: string) {
+function parseStoredTicket(payloadJson: string, nocobasePublicUrl?: string) {
 	try {
 		return extractTicket(
 			JSON.parse(payloadJson) as Parameters<typeof extractTicket>[0],
+			{ nocobasePublicUrl },
 		);
 	} catch {
 		return null;

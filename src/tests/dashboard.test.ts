@@ -51,6 +51,10 @@ function mockGitHub(
 			readme: null,
 		})),
 		createIssue: vi.fn(async () => issue),
+		uploadRepositoryFile: vi.fn(
+			async () =>
+				"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
+		),
 	};
 }
 

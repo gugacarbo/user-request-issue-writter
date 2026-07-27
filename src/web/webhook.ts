@@ -1,4 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import {
+	normalizeScreenshotInput,
+	resolveScreenshotContext,
+} from "../issue/screenshot";
 
 export type TicketContext = {
 	readonly owner: string;
@@ -14,6 +18,10 @@ export type TicketContext = {
 	readonly screenshot?: string;
 };
 
+type ExtractTicketOptions = {
+	readonly nocobasePublicUrl?: string;
+};
+
 type TicketPayload = {
 	repo?: string;
 	requester?: { name?: string; email?: string };
@@ -24,7 +32,7 @@ type TicketPayload = {
 		contexto_da_sessao?: string;
 		logs_do_console?: string;
 		logs_de_rede?: string;
-		screenshot?: string;
+		screenshot?: unknown;
 	};
 };
 
@@ -47,7 +55,10 @@ export function verifyAuthToken(token: string, secret: string): boolean {
 	return timingSafeEqual(expected, provided);
 }
 
-export function extractTicket(payload: TicketPayload): TicketContext | null {
+export function extractTicket(
+	payload: TicketPayload,
+	options?: ExtractTicketOptions,
+): TicketContext | null {
 	const repoStr = payload.repo?.trim();
 	if (!repoStr) return null;
 	const parts = repoStr.split("/");
@@ -57,17 +68,25 @@ export function extractTicket(payload: TicketPayload): TicketContext | null {
 	if (!descricao) return null;
 
 	const p = payload.payload;
+	const urlAtual = p?.url_atual?.trim() || undefined;
+	const screenshot = normalizeScreenshotInput(p?.screenshot);
+	const resolved = resolveScreenshotContext(
+		screenshot,
+		urlAtual,
+		options?.nocobasePublicUrl,
+	);
+
 	return {
 		owner: parts[0],
 		repo: parts[1],
 		requesterName: payload.requester?.name?.trim() ?? "",
 		requesterEmail: payload.requester?.email?.trim() ?? "",
 		descricao,
-		urlAtual: p?.url_atual?.trim() || undefined,
+		urlAtual: resolved.urlAtual,
 		categoria: p?.categoria?.trim() || undefined,
 		contextoSessao: p?.contexto_da_sessao?.trim() || undefined,
 		logsConsole: p?.logs_do_console?.trim() || undefined,
 		logsRede: p?.logs_de_rede?.trim() || undefined,
-		screenshot: p?.screenshot?.trim() || undefined,
+		screenshot: resolved.screenshot,
 	};
 }
