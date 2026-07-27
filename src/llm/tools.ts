@@ -1,4 +1,5 @@
 import type { GitHubClient } from "../github/github";
+import { agentIssueBodyInstructions } from "../issue/template";
 
 export type IssueProposal = {
 	readonly title: string;
@@ -77,13 +78,16 @@ export const toolSchemas: FunctionSchema[] = [
 		type: "function",
 		function: {
 			name: "submit_issue",
-			description:
-				"Submit the drafted issue. Terminal tool: stops the analysis loop. Does not create the issue directly; the host creates it.",
+			description: `Submit the drafted issue. Terminal tool: stops the analysis loop. Does not create the issue directly; the host creates it. ${agentIssueBodyInstructions()}`,
 			parameters: {
 				type: "object",
 				properties: {
 					title: { type: "string", description: "Issue title." },
-					body: { type: "string", description: "Issue body in Markdown." },
+					body: {
+						type: "string",
+						description:
+							"Issue body in Markdown (analysis sections only; host injects raw user message).",
+					},
 					labels: {
 						type: "array",
 						items: { type: "string" },

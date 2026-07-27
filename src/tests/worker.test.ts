@@ -133,6 +133,58 @@ describe("worker", () => {
 		expect(logs.length).toBeGreaterThan(0);
 	}, 10_000);
 
+	it("embeds optional screenshot in the created issue body", async () => {
+		const gh = mockGitHub({ number: 7, url: "https://example/7" });
+		const llm = mockLlm({
+			title: "Bug",
+			body: "## Resumo\nBroken.",
+			labels: ["bug"],
+		});
+		const body = ticketPayload({
+			payload: {
+				descricao: "The login button is broken",
+				url_atual: "https://app.example.com/login",
+				categoria: "bug",
+				screenshot: "https://cdn.example.com/shot.png",
+			},
+		});
+		const requestId = assertInserted(
+			enqueueRequest(
+				{ db: testDb.db },
+				{
+					bodyHash: bodyHash(body),
+					owner: "owner",
+					repo: "owner/repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					payload: body,
+				},
+			),
+		);
+
+		worker = startWorker({
+			db: testDb.db,
+			github: gh,
+			llm,
+			pollIntervalMs: 10,
+		});
+
+		await vi.waitFor(() => expect(gh.createIssue).toHaveBeenCalled(), {
+			timeout: 5_000,
+		});
+		const createIssueArgs = (gh.createIssue as ReturnType<typeof vi.fn>).mock
+			.calls[0]?.[2] as { body: string } | undefined;
+		expect(createIssueArgs?.body).toContain("## Screenshot");
+		expect(createIssueArgs?.body).toContain(
+			"![Screenshot](https://cdn.example.com/shot.png)",
+		);
+		expect(createIssueArgs?.body).toContain("The login button is broken");
+
+		await vi.waitFor(() => {
+			expect(getRequest({ db: testDb.db }, requestId)?.status).toBe("done");
+		});
+	}, 10_000);
+
 	it("marks failed when the agent does not call submit_issue", async () => {
 		const gh = mockGitHub();
 		const llm: LlmClient = {

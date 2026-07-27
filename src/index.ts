@@ -28,7 +28,7 @@ async function main(): Promise<void> {
 		logger: { level: env.LOG_LEVEL },
 		// Serve the built SPA (dist/app) and stream queue/logs over SSE when
 		// present (ADR-0009). Missing dir logs a warning, not a boot failure.
-		dashboard: { db, serveStatic: true },
+		dashboard: { db, serveStatic: true, llmModel: env.LLM_MODEL },
 	});
 
 	// Persistent queue worker (ADR-0008): polls the `queue` table for

@@ -22,6 +22,7 @@ import {
  */
 export type DashboardPluginDeps = {
 	readonly db: DB;
+	readonly llmModel: string;
 	/** Enable serving the built SPA from `appStaticDir` (default `./dist/app`). */
 	readonly serveStatic?: boolean;
 	/**
@@ -41,14 +42,23 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 ) => {
 	const dashboardDeps: DashboardDeps = { db: opts.db };
 	const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+	const publicConfig = { llmModel: opts.llmModel };
+
+	const attachConfig = <T extends Record<string, unknown>>(data: T): T => ({
+		...data,
+		...publicConfig,
+	});
 
 	// @fastify/sse must be registered before SSE routes. Scoped to this
 	// plugin so it doesn't leak into the webhook routes.
 	await server.register(ssePlugin);
 
 	// --- JSON mirrors (handy for curl / non-SSE) ---------------------------
+	server.get("/app/api/config", async () => publicConfig);
+
 	server.get("/app/api/state", async () => {
 		return {
+			...publicConfig,
 			counts: countByStatus(dashboardDeps),
 			queue: listQueueSummary(dashboardDeps),
 			requests: listRecentRequests(dashboardDeps),
@@ -81,7 +91,7 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 			lastRequestId = queue[0]?.requestId ?? 0;
 			return reply.sse.send({
 				event: "snapshot",
-				data: { counts, queue, asOf: Date.now() },
+				data: attachConfig({ counts, queue, asOf: Date.now() }),
 			});
 		};
 
@@ -97,7 +107,16 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 			lastQueueId = tick.lastQueueId;
 			lastRequestId = tick.lastRequestId;
 			try {
-				await reply.sse.send(tick.event);
+				const event =
+					tick.event.event === "snapshot"
+						? {
+								...tick.event,
+								data: attachConfig(
+									tick.event.data as Record<string, unknown>,
+								),
+							}
+						: tick.event;
+				await reply.sse.send(event);
 			} catch (error) {
 				server.log.debug({ err: error }, "queue SSE tick failed");
 			}

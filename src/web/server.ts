@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { isRepoAllowed } from "../config/allowlist";
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
+import { buildIssueBody } from "../issue/template";
 import {
 	type GenerateIssueInput,
 	generateIssue,
@@ -11,7 +12,12 @@ import {
 } from "../llm/llm";
 import { enqueueRequest, type QueueDeps } from "../queue/queue";
 import { type DashboardPluginDeps, registerDashboard } from "./dashboard";
-import { extractTicket, extractBearerToken, type TicketContext, verifyAuthToken } from "./webhook";
+import {
+	extractBearerToken,
+	extractTicket,
+	type TicketContext,
+	verifyAuthToken,
+} from "./webhook";
 
 export type ServerDeps = {
 	readonly github: GitHubClient;
@@ -43,19 +49,6 @@ function extractContextFields(ctx: TicketContext): IssueContext {
 		logsRede: ctx.logsRede,
 		screenshot: ctx.screenshot,
 	};
-}
-
-function buildIssueBody(
-	proposal: { title: string; body: string },
-	requesterName: string,
-	requesterEmail: string,
-): string {
-	return [
-		proposal.body,
-		"",
-		"---",
-		`_Requested by ${requesterName} (${requesterEmail})_`,
-	].join("\n");
 }
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
@@ -152,11 +145,13 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 					descricao: input.descricao,
 					issue: {
 						title: proposal.title,
-						body: buildIssueBody(
-							proposal,
-							input.requesterName,
-							input.requesterEmail,
-						),
+						body: buildIssueBody({
+							agentBody: proposal.body,
+							rawUserMessage: input.descricao,
+							screenshot: ctx.screenshot,
+							requesterName: input.requesterName,
+							requesterEmail: input.requesterEmail,
+						}),
 						labels: proposal.labels,
 					},
 				});

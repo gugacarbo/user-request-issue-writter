@@ -1,7 +1,9 @@
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
-import type { GenerateIssueInput, LlmClient } from "../llm/llm";
+import { buildIssueBody } from "../issue/template";
+import type { GenerateIssueInput, IssueContext, LlmClient } from "../llm/llm";
 import { generateIssue } from "../llm/llm";
+import { extractTicket } from "../web/webhook";
 import type { QueueDeps } from "./queue";
 import {
 	appendLlmLog,
@@ -105,14 +107,24 @@ async function processOne(
 		return;
 	}
 
+	const ticket = parseStoredTicket(request.payload);
+	if (!ticket) {
+		finalizeProcessing(queueDeps, {
+			queueId,
+			requestId,
+			status: "failed",
+			lastError: "invalid stored ticket payload",
+		});
+		return;
+	}
+
 	const input: GenerateIssueInput = {
-		owner: request.owner,
-		repo: request.owner
-			? request.repo.slice(request.owner.length + 1)
-			: request.repo,
-		requesterName: request.requesterName,
-		requesterEmail: request.requesterEmail,
-		descricao: extractDescricao(request.payload),
+		owner: ticket.owner,
+		repo: ticket.repo,
+		requesterName: ticket.requesterName,
+		requesterEmail: ticket.requesterEmail,
+		descricao: ticket.descricao,
+		context: ticketContextFromTicket(ticket),
 	};
 	try {
 		const proposal = await generateIssue(deps.llm, deps.github, input, {
@@ -142,11 +154,13 @@ async function processOne(
 			return;
 		}
 
-		const body = buildIssueBody(
-			proposal.body,
-			input.requesterName,
-			input.requesterEmail,
-		);
+		const body = buildIssueBody({
+			agentBody: proposal.body,
+			rawUserMessage: input.descricao,
+			screenshot: ticket.screenshot,
+			requesterName: input.requesterName,
+			requesterEmail: input.requesterEmail,
+		});
 		const created = await deps.github.createIssue(input.owner, input.repo, {
 			title: proposal.title,
 			body,
@@ -176,26 +190,29 @@ async function processOne(
 	}
 }
 
-function extractDescricao(payloadJson: string): string {
+function parseStoredTicket(payloadJson: string) {
 	try {
-		const parsed = JSON.parse(payloadJson) as {
-			payload?: { descricao?: string };
-		};
-		return parsed.payload?.descricao ?? "";
+		return extractTicket(
+			JSON.parse(payloadJson) as Parameters<typeof extractTicket>[0],
+		);
 	} catch {
-		return "";
+		return null;
 	}
 }
 
-function buildIssueBody(
-	body: string,
-	requesterName: string,
-	requesterEmail: string,
-): string {
-	return [
-		body,
-		"",
-		"---",
-		`_Requested by ${requesterName} (${requesterEmail})_`,
-	].join("\n");
+function ticketContextFromTicket(
+	ticket: NonNullable<ReturnType<typeof parseStoredTicket>>,
+): IssueContext | undefined {
+	const context: IssueContext = {
+		urlAtual: ticket.urlAtual,
+		categoria: ticket.categoria,
+		contextoSessao: ticket.contextoSessao,
+		logsConsole: ticket.logsConsole,
+		logsRede: ticket.logsRede,
+		screenshot: ticket.screenshot,
+	};
+	const hasContext = Object.values(context).some(
+		(value) => value !== undefined,
+	);
+	return hasContext ? context : undefined;
 }

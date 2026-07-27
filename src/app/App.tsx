@@ -17,6 +17,7 @@ export function App() {
 	const queue = useSse<{
 		counts?: Counts;
 		queue?: QueueSummaryRow[];
+		llmModel?: string;
 	}>("/app/events/queue");
 
 	const logs = useSse<{ logs?: LlmLogRow[] }>("/app/events/llm-logs");
@@ -54,10 +55,20 @@ export function App() {
 		[queue.data],
 	);
 
+	const llmModel = queue.data?.llmModel;
+
 	return (
 		<main className="app">
 			<header className="topbar">
-				<h1>Fila de solicitações</h1>
+				<div className="topbar-main">
+					<h1>Fila de solicitações</h1>
+					{llmModel ? (
+						<span className="model-badge" title="Modelo LLM configurado">
+							<span className="model-label">LLM</span>
+							<code>{llmModel}</code>
+						</span>
+					) : null}
+				</div>
 				<div className="conn">
 					<span
 						className={`dot ${queue.connected && logs.connected ? "live" : "down"}`}

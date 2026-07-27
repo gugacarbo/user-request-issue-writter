@@ -1,4 +1,5 @@
 import type { GitHubClient } from "../github/github";
+import { agentIssueBodyInstructions } from "../issue/template";
 import { dispatchTool, type IssueProposal, toolSchemas } from "./tools";
 
 export type ToolCall = {
@@ -62,8 +63,12 @@ type DebugLog = (message: string, data?: Record<string, unknown>) => void;
 
 const DEFAULT_MAX_ITERATIONS = 15;
 
-const SYSTEM_PROMPT =
-	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user-submitted ticket. Use the tools to understand the repository context before submitting. Always call submit_issue exactly once when ready to finalize the issue.";
+const SYSTEM_PROMPT = [
+	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user-submitted ticket.",
+	"Use the tools to understand the repository context before submitting.",
+	"Always call submit_issue exactly once when ready to finalize the issue.",
+	agentIssueBodyInstructions(),
+].join(" ");
 
 function buildUserMessage(input: GenerateIssueInput): string {
 	const lines = [
@@ -82,7 +87,9 @@ function buildUserMessage(input: GenerateIssueInput): string {
 	}
 	lines.push(
 		"",
-		"Draft a well-structured GitHub issue based on this ticket. Call submit_issue with the title, body (Markdown), and optional labels.",
+		"Draft a well-structured GitHub issue based on this ticket.",
+		agentIssueBodyInstructions(),
+		"Call submit_issue with the title, body (Markdown), and optional labels.",
 	);
 	return lines.join("\n");
 }

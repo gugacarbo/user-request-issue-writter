@@ -1,5 +1,11 @@
 import { execSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
@@ -201,7 +207,12 @@ describe("dashboard plugin (JSON + static)", () => {
 			db: testDb.db,
 			logger: false,
 			// serveStatic: false → routes JSON/SSE registered, no SPA dir needed.
-			dashboard: { db: testDb.db, serveStatic: false, pollIntervalMs: 10 },
+			dashboard: {
+				db: testDb.db,
+				llmModel: "gpt-4o-mini",
+				serveStatic: false,
+				pollIntervalMs: 10,
+			},
 		};
 		server = buildServer(deps);
 	});
@@ -209,6 +220,12 @@ describe("dashboard plugin (JSON + static)", () => {
 	afterEach(async () => {
 		await server.close();
 		testDb.cleanup();
+	});
+
+	it("/app/api/config returns the configured LLM model", async () => {
+		const res = await server.inject({ method: "GET", url: "/app/api/config" });
+		expect(res.statusCode).toBe(200);
+		expect(res.json()).toEqual({ llmModel: "gpt-4o-mini" });
 	});
 
 	it("/app/api/state returns counts + queue + requests", async () => {
@@ -229,6 +246,7 @@ describe("dashboard plugin (JSON + static)", () => {
 		const res = await server.inject({ method: "GET", url: "/app/api/state" });
 		expect(res.statusCode).toBe(200);
 		const json = res.json() as {
+			llmModel: string;
 			counts: {
 				pending: number;
 				processing: number;
@@ -238,6 +256,7 @@ describe("dashboard plugin (JSON + static)", () => {
 			queue: { requestId: number; repo: string }[];
 			requests: { id: number; owner: string }[];
 		};
+		expect(json.llmModel).toBe("gpt-4o-mini");
 		expect(json.counts.pending).toBe(1);
 		expect(json.queue.length).toBe(1);
 		expect(json.queue[0]?.repo).toBe("a/b");
@@ -390,7 +409,12 @@ describe("dashboard static SPA serving", () => {
 			webhookSecret: "topsecret",
 			db: testDb.db,
 			logger: false,
-			dashboard: { db: testDb.db, serveStatic: true, appStaticDir: dir },
+			dashboard: {
+				db: testDb.db,
+				llmModel: "test-model",
+				serveStatic: true,
+				appStaticDir: dir,
+			},
 		});
 		await server.ready();
 
@@ -431,7 +455,12 @@ describe("dashboard static SPA serving", () => {
 			webhookSecret: "topsecret",
 			db: testDb.db,
 			logger: false,
-			dashboard: { db: testDb.db, serveStatic: true, appStaticDir: dir },
+			dashboard: {
+				db: testDb.db,
+				llmModel: "test-model",
+				serveStatic: true,
+				appStaticDir: dir,
+			},
 		});
 		await server.ready();
 
@@ -463,7 +492,10 @@ describe("dashboard static SPA serving", () => {
 	it("vite build emits asset URLs under /app/", () => {
 		const repoRoot = resolve(import.meta.dirname, "..", "..");
 		execSync("pnpm app:build", { cwd: repoRoot, stdio: "pipe" });
-		const html = readFileSync(join(repoRoot, "dist", "app", "index.html"), "utf8");
+		const html = readFileSync(
+			join(repoRoot, "dist", "app", "index.html"),
+			"utf8",
+		);
 		expect(html).toMatch(/\/app\/assets\//);
 		expect(html).not.toMatch(/(?:src|href)="\/assets\//);
 	});
@@ -478,6 +510,7 @@ describe("dashboard static SPA serving", () => {
 			logger: { level: "warn" },
 			dashboard: {
 				db: testDb.db,
+				llmModel: "test-model",
 				serveStatic: true,
 				appStaticDir: join(tmpdir(), "definitely-not-here-xyz"),
 			},

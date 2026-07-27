@@ -26,25 +26,41 @@ export function useSse<T>(url: string): SseState<T> {
 
 		const onOpen = () => setConnected(true);
 		const onError = () => setConnected(false);
-		const onAny = (evt: MessageEvent) => {
+		const onSnapshot = (evt: MessageEvent) => {
 			try {
 				setData(JSON.parse(evt.data) as T);
 			} catch {
 				// keep last known good state; a malformed frame is non-fatal
 			}
 		};
+		// Counts ticks only ship status tallies — merge so we keep the last queue
+		// snapshot instead of wiping `queue` from state.
+		const onCounts = (evt: MessageEvent) => {
+			try {
+				const counts = JSON.parse(evt.data) as Record<string, unknown>;
+				setData((prev) => ({ ...(prev ?? {}), counts }) as T);
+			} catch {
+				// keep last known good state
+			}
+		};
+		const onLogs = (evt: MessageEvent) => {
+			try {
+				setData(JSON.parse(evt.data) as T);
+			} catch {
+				// keep last known good state
+			}
+		};
 
-		// Listen to every named event the server emits (snapshot/counts/logs).
-		es.addEventListener("snapshot", onAny as EventListener);
-		es.addEventListener("counts", onAny as EventListener);
-		es.addEventListener("logs", onAny as EventListener);
+		es.addEventListener("snapshot", onSnapshot as EventListener);
+		es.addEventListener("counts", onCounts as EventListener);
+		es.addEventListener("logs", onLogs as EventListener);
 		es.addEventListener("open", onOpen as EventListener);
 		es.addEventListener("error", onError as EventListener);
 
 		return () => {
-			es.removeEventListener("snapshot", onAny as EventListener);
-			es.removeEventListener("counts", onAny as EventListener);
-			es.removeEventListener("logs", onAny as EventListener);
+			es.removeEventListener("snapshot", onSnapshot as EventListener);
+			es.removeEventListener("counts", onCounts as EventListener);
+			es.removeEventListener("logs", onLogs as EventListener);
 			es.removeEventListener("open", onOpen as EventListener);
 			es.removeEventListener("error", onError as EventListener);
 			es.close();
