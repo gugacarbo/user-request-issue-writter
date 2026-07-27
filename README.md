@@ -120,6 +120,23 @@ curl http://localhost:8080/health
 # {"status":"ok"}
 ```
 
+## Painel web (dashboard)
+
+O painel de observabilidade da fila e dos logs do LLM fica em **`/app/`**.
+A raiz (`/`) redireciona para `/app/`.
+
+| Ambiente | URL |
+| -------- | --- |
+| Produção (Docker/Easypanel) | `https://seu-dominio/app/` |
+| Local (só backend) | `http://localhost:8080/app/` |
+| Desenvolvimento (Vite + backend) | `http://localhost:5173/app/` |
+
+Em dev, rode o backend (`pnpm dev`) e o Vite (`pnpm app:dev`) em terminais
+separados. O Vite faz proxy de `/app/events` e `/app/api` para o backend.
+
+O build do front (`pnpm app:build`) é incluído em `pnpm build` e empacotado na
+imagem Docker; após deploy, acesse `/app/` (não `/assets/...` na raiz).
+
 ## Fluxo
 
 1. `POST /webhook/github` chega com um ticket assinado.

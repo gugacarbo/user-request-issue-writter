@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateIssueResult, GitHubClient } from "../github/github";
@@ -380,7 +381,7 @@ describe("dashboard static SPA serving", () => {
 		testDb.cleanup();
 	});
 
-	it("serves index.html at /app/ and / from an existing static dir", async () => {
+	it("serves index.html at /app/ and redirects / to /app/", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "uriw-static-"));
 		writeFileSync(join(dir, "index.html"), "<!doctype html><title>ok</title>");
 		const server = buildServer({
@@ -391,6 +392,7 @@ describe("dashboard static SPA serving", () => {
 			logger: false,
 			dashboard: { db: testDb.db, serveStatic: true, appStaticDir: dir },
 		});
+		await server.ready();
 
 		const appRes = await server.inject({
 			method: "GET",
@@ -400,12 +402,70 @@ describe("dashboard static SPA serving", () => {
 		expect(appRes.body).toContain("ok");
 
 		const rootRes = await server.inject({ method: "GET", url: "/" });
-		expect(rootRes.statusCode).toBe(200);
-		expect(rootRes.body).toContain("ok");
+		expect(rootRes.statusCode).toBe(302);
+		expect(rootRes.headers.location).toBe("/app/");
 
 		await server.close();
 		rmSync(dir, { recursive: true, force: true });
 		vi.clearAllMocks();
+	});
+
+	it("serves built asset files under /app/assets/", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "uriw-static-"));
+		const assetsDir = join(dir, "assets");
+		mkdirSync(assetsDir, { recursive: true });
+		writeFileSync(
+			join(dir, "index.html"),
+			[
+				"<!doctype html>",
+				'<link rel="stylesheet" href="/app/assets/index.css" />',
+				'<script type="module" src="/app/assets/index.js"></script>',
+			].join("\n"),
+		);
+		writeFileSync(join(assetsDir, "index.css"), "body{}");
+		writeFileSync(join(assetsDir, "index.js"), "console.log('ok');");
+
+		const server = buildServer({
+			github: mockGitHub(),
+			llm: mockLlm({ title: "T", body: "b", labels: [] }),
+			webhookSecret: "topsecret",
+			db: testDb.db,
+			logger: false,
+			dashboard: { db: testDb.db, serveStatic: true, appStaticDir: dir },
+		});
+		await server.ready();
+
+		const cssRes = await server.inject({
+			method: "GET",
+			url: "/app/assets/index.css",
+		});
+		expect(cssRes.statusCode).toBe(200);
+		expect(cssRes.body).toBe("body{}");
+
+		const jsRes = await server.inject({
+			method: "GET",
+			url: "/app/assets/index.js",
+		});
+		expect(jsRes.statusCode).toBe(200);
+		expect(jsRes.body).toContain("ok");
+
+		const legacyRes = await server.inject({
+			method: "GET",
+			url: "/assets/index.js",
+		});
+		expect(legacyRes.statusCode).toBe(404);
+
+		await server.close();
+		rmSync(dir, { recursive: true, force: true });
+		vi.clearAllMocks();
+	});
+
+	it("vite build emits asset URLs under /app/", () => {
+		const repoRoot = resolve(import.meta.dirname, "..", "..");
+		execSync("pnpm app:build", { cwd: repoRoot, stdio: "pipe" });
+		const html = readFileSync(join(repoRoot, "dist", "app", "index.html"), "utf8");
+		expect(html).toMatch(/\/app\/assets\//);
+		expect(html).not.toMatch(/(?:src|href)="\/assets\//);
 	});
 
 	it("warns (no crash) when the static dir does not exist", async () => {

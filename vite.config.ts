@@ -7,11 +7,13 @@ import { defineConfig } from "vite";
  *
  * - `root` is `src/app` so the dev server serves `index.html` directly.
  * - Build output is `dist/app`, served by Fastify's @fastify/static in prod.
+ * - `base` is `/app/` so asset URLs match the Fastify static prefix in prod.
  * - In dev (`pnpm app:dev`) the Vite dev server runs on 5173 and proxies
  *   `/webhook`, `/health`, `/app/events` and `/app/api` to the backend on 8080,
  *   so the SPA can talk to the real SSE/JSON endpoints during development.
  */
 export default defineConfig({
+	base: "/app/",
 	root: resolve(__dirname, "src", "app"),
 	plugins: [react()],
 	resolve: {

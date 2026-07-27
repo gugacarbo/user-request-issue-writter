@@ -156,9 +156,9 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 			server.get("/app/*", async (_req, reply) => {
 				return reply.sendFile("index.html", dir);
 			});
-			// Convenience: "/" loads the dashboard directly.
+			// Convenience: "/" redirects to the dashboard under /app/.
 			server.get("/", async (_req, reply) => {
-				return reply.sendFile("index.html", dir);
+				return reply.redirect("/app/");
 			});
 		} else {
 			server.log.warn(
