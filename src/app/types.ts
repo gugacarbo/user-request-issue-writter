@@ -29,3 +29,37 @@ export type LlmLogRow = {
 };
 
 export type Counts = Record<RequestStatus, number>;
+
+export type QueueRow = {
+	id: number;
+	requestId: number;
+	status: RequestStatus;
+	attempts: number;
+	lastError: string | null;
+	nextRunAt: number;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type RequestRow = {
+	id: number;
+	bodyHash: string;
+	deliveryId: string | null;
+	repo: string;
+	owner: string;
+	requesterName: string;
+	requesterEmail: string;
+	status: RequestStatus;
+	issueNumber: number | null;
+	issueUrl: string | null;
+	attempts: number;
+	lastError: string | null;
+	createdAt: number;
+	updatedAt: number;
+};
+
+export type RunDetail = {
+	request: RequestRow;
+	queue: QueueRow | null;
+	logs: LlmLogRow[];
+};

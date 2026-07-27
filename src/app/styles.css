@@ -202,6 +202,10 @@ a {
 	background: var(--panel-2);
 }
 
+.queue-table tr.clickable {
+	cursor: pointer;
+}
+
 td.err {
 	color: var(--red);
 	cursor: help;
@@ -283,4 +287,140 @@ td.err {
 	color: var(--muted);
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* --- Run dialog (ADR-0009) ---------------------------------------------- */
+
+.dialog-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+	padding: 16px;
+}
+
+/* Full-area close affordance sitting behind the dialog panel. */
+.dialog-backdrop-btn {
+	position: absolute;
+	inset: 0;
+	border: none;
+	background: transparent;
+	cursor: default;
+	padding: 0;
+	margin: 0;
+}
+
+.dialog {
+	background: var(--panel);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	width: min(720px, 100%);
+	max-height: min(80vh, 100%);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.dialog-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--border);
+}
+
+.dialog-header h2 {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 600;
+}
+
+.dialog-close {
+	background: transparent;
+	border: 1px solid var(--border);
+	color: var(--muted);
+	border-radius: 6px;
+	width: 26px;
+	height: 26px;
+	cursor: pointer;
+	line-height: 1;
+}
+
+.dialog-close:hover {
+	color: var(--text);
+	border-color: var(--text);
+}
+
+.tabs {
+	display: flex;
+	gap: 4px;
+	padding: 8px 16px 0;
+	border-bottom: 1px solid var(--border);
+}
+
+.tab {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	color: var(--muted);
+	padding: 6px 10px;
+	cursor: pointer;
+	font-size: 13px;
+}
+
+.tab:hover {
+	color: var(--text);
+}
+
+.tab.active {
+	color: var(--text);
+	border-bottom-color: var(--accent);
+}
+
+.dialog-body {
+	overflow: auto;
+	padding: 16px;
+}
+
+.kv-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px 24px;
+	font-size: 13px;
+}
+
+.kv {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.kv-label {
+	color: var(--muted);
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.kv-value {
+	color: var(--text);
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.err-text {
+	font-family: var(--mono);
+	font-size: 12px;
+	color: var(--red);
+	word-break: break-word;
+	white-space: pre-wrap;
+}
+
+/* Keep the dialog's log tail scrollable inside the bounded body. */
+.dialog-body .logs-wrap {
+	max-height: none;
 }

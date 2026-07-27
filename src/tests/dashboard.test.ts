@@ -22,6 +22,7 @@ import {
 import { computeLlmLogsTick, computeQueueTick } from "../web/dashboard";
 import {
 	countByStatus,
+	getRequestRun,
 	listLlmLogsSince,
 	listQueueSummary,
 	listRecentRequests,
@@ -192,6 +193,33 @@ describe("dashboardApi (read-only queries)", () => {
 		expect(tail.length).toBe(1);
 		expect(tail[0]?.event).toBe("done");
 	});
+
+	it("getRequestRun returns request + queue + ordered logs, or null", () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+		appendLlmLog({ db: testDb.db }, { requestId, event: "first" });
+		appendLlmLog({ db: testDb.db }, { requestId, event: "second" });
+
+		const run = getRequestRun({ db: testDb.db }, requestId);
+		expect(run).not.toBeNull();
+		expect(run?.request.id).toBe(requestId);
+		expect(run?.queue?.requestId).toBe(requestId);
+		// Oldest-first for run replay.
+		expect(run?.logs.map((l) => l.event)).toEqual(["first", "second"]);
+
+		// Unknown id → null.
+		expect(getRequestRun({ db: testDb.db }, 9999999)).toBeNull();
+	});
 });
 
 describe("dashboard plugin (JSON + static)", () => {
@@ -305,6 +333,65 @@ describe("dashboard plugin (JSON + static)", () => {
 		// only warn (already exercised above); assert /health still works.
 		const res = await server.inject({ method: "GET", url: "/health" });
 		expect(res.statusCode).toBe(200);
+	});
+
+	it("/app/api/requests/:id returns the request, queue and ordered logs", async () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+		appendLlmLog(
+			{ db: testDb.db },
+			{
+				requestId,
+				iteration: 0,
+				event: "llm response",
+				toolName: "list_files",
+			},
+		);
+		appendLlmLog({ db: testDb.db }, { requestId, event: "done" });
+
+		const res = await server.inject({
+			method: "GET",
+			url: `/app/api/requests/${requestId}`,
+		});
+		expect(res.statusCode).toBe(200);
+		const json = res.json() as {
+			request: { id: number; owner: string; status: string };
+			queue: { requestId: number; status: string } | null;
+			logs: { event: string }[];
+		};
+		expect(json.request.id).toBe(requestId);
+		expect(json.request.owner).toBe("a");
+		expect(json.request.status).toBe("pending");
+		expect(json.queue?.requestId).toBe(requestId);
+		// Logs ordered oldest-first for run replay.
+		expect(json.logs.map((l) => l.event)).toEqual(["llm response", "done"]);
+	});
+
+	it("/app/api/requests/:id returns 404 for an unknown id", async () => {
+		const res = await server.inject({
+			method: "GET",
+			url: "/app/api/requests/9999999",
+		});
+		expect(res.statusCode).toBe(404);
+		expect((res.json() as { error: string }).error).toBe("not found");
+	});
+
+	it("/app/api/requests/:id returns 400 for an invalid id", async () => {
+		const res = await server.inject({
+			method: "GET",
+			url: "/app/api/requests/abc",
+		});
+		expect(res.statusCode).toBe(400);
 	});
 });
 

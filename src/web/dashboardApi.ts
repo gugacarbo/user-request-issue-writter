@@ -183,20 +183,21 @@ export function getRequestRun(
 		.get();
 	if (!request) return null;
 
-	const queue = deps.db
-		.select({
-			id: queueTable.id,
-			requestId: queueTable.requestId,
-			status: queueTable.status,
-			attempts: queueTable.attempts,
-			lastError: queueTable.lastError,
-			nextRunAt: queueTable.nextRunAt,
-			createdAt: queueTable.createdAt,
-			updatedAt: queueTable.updatedAt,
-		})
-		.from(queueTable)
-		.where(eq(queueTable.requestId, requestId))
-		.get();
+	const queue =
+		deps.db
+			.select({
+				id: queueTable.id,
+				requestId: queueTable.requestId,
+				status: queueTable.status,
+				attempts: queueTable.attempts,
+				lastError: queueTable.lastError,
+				nextRunAt: queueTable.nextRunAt,
+				createdAt: queueTable.createdAt,
+				updatedAt: queueTable.updatedAt,
+			})
+			.from(queueTable)
+			.where(eq(queueTable.requestId, requestId))
+			.get() ?? null;
 
 	const logs = deps.db
 		.select({

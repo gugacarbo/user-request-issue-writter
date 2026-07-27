@@ -7,7 +7,13 @@ function formatTime(unixSeconds: number): string {
 	return d.toLocaleTimeString();
 }
 
-export function QueueTable({ rows }: { rows: QueueSummaryRow[] }) {
+export function QueueTable({
+	rows,
+	onSelect,
+}: {
+	rows: QueueSummaryRow[];
+	onSelect?: (row: QueueSummaryRow) => void;
+}) {
 	if (rows.length === 0) {
 		return <p className="empty">Nenhuma solicitação na fila ainda.</p>;
 	}
@@ -27,7 +33,19 @@ export function QueueTable({ rows }: { rows: QueueSummaryRow[] }) {
 			</thead>
 			<tbody>
 				{rows.map((r) => (
-					<tr key={r.id}>
+					<tr
+						key={r.id}
+						className={onSelect ? "clickable" : undefined}
+						onClick={
+							onSelect
+								? (e) => {
+										// Don't open the dialog when clicking the issue link.
+										if ((e.target as HTMLElement).closest("a")) return;
+										onSelect(r);
+									}
+								: undefined
+						}
+					>
 						<td>{r.requestId}</td>
 						<td>{r.repo ?? "—"}</td>
 						<td>{r.requesterName ?? "—"}</td>

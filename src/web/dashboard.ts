@@ -7,6 +7,7 @@ import type { DB } from "../db";
 import {
 	countByStatus,
 	type DashboardDeps,
+	getRequestRun,
 	listLlmLogsSince,
 	listQueueSummary,
 	listRecentRequests,
@@ -75,6 +76,23 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 		};
 	});
 
+	// Per-request run detail: request + queue item + ordered agent logs, for the
+	// run dialog opened by clicking a queue row. 404 when the id is unknown.
+	server.get("/app/api/requests/:id", async (request, reply) => {
+		const id = Number.parseInt(
+			(request.params as { id?: string }).id ?? "",
+			10,
+		);
+		if (Number.isNaN(id)) {
+			return reply.code(400).send({ error: "invalid id" });
+		}
+		const run = getRequestRun(dashboardDeps, id);
+		if (!run) {
+			return reply.code(404).send({ error: "not found" });
+		}
+		return run;
+	});
+
 	// --- SSE: /app/events/queue -------------------------------------------
 	// Streams a snapshot first, then diffs every `pollIntervalMs`. Each client
 	// keeps its own last-seen-ids so we only send deltas.
@@ -111,9 +129,7 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 					tick.event.event === "snapshot"
 						? {
 								...tick.event,
-								data: attachConfig(
-									tick.event.data as Record<string, unknown>,
-								),
+								data: attachConfig(tick.event.data as Record<string, unknown>),
 							}
 						: tick.event;
 				await reply.sse.send(event);

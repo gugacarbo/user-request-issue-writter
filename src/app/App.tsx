@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CountsCards } from "./CountsCards";
 import { LogsPanel } from "./LogsPanel";
 import { QueueTable } from "./QueueTable";
+import { RunDialog } from "./RunDialog";
 import type { Counts, LlmLogRow, QueueSummaryRow } from "./types";
 import { useSse } from "./useSse";
 
@@ -23,6 +24,9 @@ export function App() {
 	const logs = useSse<{ logs?: LlmLogRow[] }>("/app/events/llm-logs");
 
 	const [allLogs, setAllLogs] = useState<LlmLogRow[]>([]);
+	const [selectedRequestId, setSelectedRequestId] = useState<number | null>(
+		null,
+	);
 
 	// Append new log lines (dedup by id) to keep a growing buffer the
 	// LogsPanel can tail.
@@ -82,7 +86,10 @@ export function App() {
 
 			<section className="panel">
 				<h2>Solicitações</h2>
-				<QueueTable rows={queueRows} />
+				<QueueTable
+					rows={queueRows}
+					onSelect={(r) => setSelectedRequestId(r.requestId)}
+				/>
 			</section>
 
 			<section className="panel">
@@ -91,6 +98,13 @@ export function App() {
 					<LogsPanel logs={allLogs} />
 				</div>
 			</section>
+
+			{selectedRequestId !== null && (
+				<RunDialog
+					requestId={selectedRequestId}
+					onClose={() => setSelectedRequestId(null)}
+				/>
+			)}
 		</main>
 	);
 }
