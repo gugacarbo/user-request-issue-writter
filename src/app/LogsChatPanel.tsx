@@ -9,6 +9,7 @@ import {
 	SubmitIssueToolPart,
 	ToolCallsGroup,
 } from "./issueToolRenderers";
+import { LogsUserMessage } from "./LogsUserMessage";
 import { llmLogsToUIMessages } from "./llmLogsToChat";
 import type { LlmLogRow } from "./types";
 
@@ -84,11 +85,19 @@ export function LogsChatPanel({
 			<MessageList
 				messages={messages}
 				status="ready"
-				initialScrollBehavior="top"
+				initialScrollBehavior="bottom"
 				enableImagePreview={false}
-				showCopyToolbar
+				showCopyToolbar={false}
+				virtualized
+				showTurnDividers
 				groupConsecutiveTools
+				classNames={{
+					content: "max-w-2xl",
+					assistantBubble:
+						"w-full max-w-[min(92%,30rem)] rounded-an-message border border-border/60 bg-muted/25 px-3 py-2.5 shadow-sm",
+				}}
 				slots={{
+					UserMessage: LogsUserMessage,
 					ToolRenderer: LogsToolRenderer,
 					GroupedTools: LogsGroupedTools as NonNullable<
 						ComponentProps<typeof MessageList>["slots"]

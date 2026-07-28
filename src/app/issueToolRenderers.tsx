@@ -14,6 +14,9 @@ function isPending(state: string | undefined): boolean {
 	return state !== "output-available" && state !== "output-error";
 }
 
+const CHAT_TOOL_SURFACE =
+	"rounded-md bg-background/60 ring-1 ring-inset ring-border/50";
+
 function ToolRow({
 	title,
 	subtitle,
@@ -39,7 +42,7 @@ function ToolRow({
 					"text-xs",
 					nested
 						? "px-2 py-1"
-						: "rounded-lg border border-border bg-muted/30 px-2 py-1",
+						: cn(CHAT_TOOL_SURFACE, "px-2 py-1"),
 				)}
 			>
 				<p className="truncate font-medium">
@@ -61,7 +64,7 @@ function ToolRow({
 				"text-xs",
 				nested
 					? "rounded-md border border-border/60 bg-background/40"
-					: "rounded-lg border border-border bg-muted/30",
+					: CHAT_TOOL_SURFACE,
 			)}
 		>
 			<button
@@ -153,7 +156,7 @@ export function ToolCallsGroup({
 	const summary = summarizeToolGroup(tools);
 
 	return (
-		<div className="rounded-lg border border-border bg-muted/30 text-xs">
+		<div className={cn(CHAT_TOOL_SURFACE, "text-xs")}>
 			<button
 				type="button"
 				className="flex w-full items-center gap-1.5 px-2 py-1 text-left"
@@ -168,7 +171,6 @@ export function ToolCallsGroup({
 				<span className="min-w-0 flex-1 truncate font-medium">
 					{anyPending ? `${summary}…` : summary}
 				</span>
-				<span className="shrink-0 text-muted-foreground">{tools.length}</span>
 			</button>
 			{open ? (
 				<div className="space-y-1 border-t border-border px-1.5 py-1.5">

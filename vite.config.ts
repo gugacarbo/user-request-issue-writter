@@ -16,6 +16,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
 	base: "/app/",
 	root: resolve(__dirname, "src", "app"),
+	envDir: resolve(__dirname),
 	plugins: [react(), tailwindcss()],
 	resolve: {
 		alias: {
@@ -28,9 +29,19 @@ export default defineConfig({
 			),
 		},
 	},
+	optimizeDeps: {
+		include: ["@tanstack/react-virtual"],
+		entries: [
+			resolve(__dirname, "src", "app", "index.html"),
+			resolve(__dirname, "src", "components", "agent-elements", "message-list.tsx"),
+		],
+	},
 	server: {
 		port: 5173,
 		strictPort: true,
+		fs: {
+			allow: [resolve(__dirname)],
+		},
 		proxy: {
 			"/webhook": { target: "http://127.0.0.1:8080", changeOrigin: true },
 			"/health": { target: "http://127.0.0.1:8080", changeOrigin: true },

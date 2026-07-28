@@ -91,9 +91,9 @@ function formatStartedMessage(data: Record<string, unknown> | null): string {
 	const owner = data.owner;
 	const repo = data.repo;
 	const requester = data.requester;
-	const parts: string[] = ["Analisando solicitação"];
+	const parts: string[] = ["### Analisando solicitação"];
 	if (typeof owner === "string" && typeof repo === "string") {
-		parts.push(`**Repositório:** ${owner}/${repo}`);
+		parts.push(`**Repositório:** \`${owner}/${repo}\``);
 	}
 	if (typeof requester === "string") {
 		parts.push(`**Solicitante:** ${requester}`);

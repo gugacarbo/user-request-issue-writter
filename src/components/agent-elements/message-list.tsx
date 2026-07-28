@@ -1,3 +1,4 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import React, {
   memo,
   useRef,
@@ -40,6 +41,13 @@ export type MessageListProps = {
   enableImagePreview?: boolean;
   /** Collapse consecutive tool parts into one grouped row (logs UI). */
   groupConsecutiveTools?: boolean;
+  /**
+   * Virtualize turns with TanStack Virtual (logs / long transcripts).
+   * Auto-scroll still follows only when the user is pinned to the bottom.
+   */
+  virtualized?: boolean;
+  /** Visual separators between conversation turns (e.g. log retries). */
+  showTurnDividers?: boolean;
   slots?: {
     UserMessage?: React.ComponentType<{
       message: UIMessage;
@@ -51,6 +59,9 @@ export type MessageListProps = {
   };
   classNames?: {
     userMessage?: string;
+    content?: string;
+    assistantBubble?: string;
+    turnDivider?: string;
   };
   toolRenderers?: Record<string, React.ComponentType<CustomToolRendererProps>>;
 };
@@ -260,11 +271,12 @@ function MessageToolbar({
   );
 }
 
+type ChatTurn = { userMsg?: UIMessage; assistantMsgs: UIMessage[] };
+
 /** Group flat messages into turns (user message + following assistant messages) */
-function groupMessagesIntoTurns(messages: UIMessage[]) {
-  const turns: { userMsg?: UIMessage; assistantMsgs: UIMessage[] }[] = [];
-  let current: { userMsg?: UIMessage; assistantMsgs: UIMessage[] } | null =
-    null;
+function groupMessagesIntoTurns(messages: UIMessage[]): ChatTurn[] {
+  const turns: ChatTurn[] = [];
+  let current: ChatTurn | null = null;
 
   for (const msg of messages) {
     if (msg.role === "user") {
@@ -279,6 +291,203 @@ function groupMessagesIntoTurns(messages: UIMessage[]) {
   return turns;
 }
 
+type MessageTurnRowProps = {
+  turn: ChatTurn;
+  turnIndex: number;
+  turnCount: number;
+  isMounted: boolean;
+  isStreaming: boolean;
+  showPlanning: boolean;
+  planningLabel: string;
+  showCopyToolbar: boolean;
+  suppressQuestionTool: boolean;
+  enableImagePreview: boolean;
+  activeCopyId: string | null;
+  classNames?: MessageListProps["classNames"];
+  CustomUserMessage?: React.ComponentType<{
+    message: UIMessage;
+    className?: string;
+    enableImagePreview?: boolean;
+  }>;
+  CustomToolRenderer: React.ComponentType<ToolRendererProps>;
+  CustomGroupedTools?: React.ComponentType<GroupedToolsProps>;
+  groupConsecutiveTools: boolean;
+  showTurnDividers?: boolean;
+  toolRenderers?: MessageListProps["toolRenderers"];
+  onCopied: (id: string) => void;
+};
+
+const MessageTurnRow = memo(function MessageTurnRow({
+  turn,
+  turnIndex,
+  turnCount,
+  isMounted,
+  isStreaming,
+  showPlanning,
+  planningLabel,
+  showCopyToolbar,
+  suppressQuestionTool,
+  enableImagePreview,
+  activeCopyId,
+  classNames,
+  CustomUserMessage,
+  CustomToolRenderer,
+  CustomGroupedTools,
+  groupConsecutiveTools,
+  showTurnDividers = false,
+  toolRenderers,
+  onCopied,
+}: MessageTurnRowProps) {
+  const isLastTurn = turnIndex === turnCount - 1;
+  const turnKey = turn.userMsg?.id ?? `turn-${turnIndex}`;
+  const UserMessageComponent = CustomUserMessage ?? UserMessage;
+  const assistantBubbleClass = classNames?.assistantBubble;
+
+  return (
+    <div className="relative space-y-3">
+      {showTurnDividers && turnIndex > 0 ? (
+        <div
+          className={cn(
+            "flex items-center gap-3 py-1 text-[11px] uppercase tracking-wide text-muted-foreground",
+            classNames?.turnDivider,
+          )}
+        >
+          <div className="h-px flex-1 bg-border/70" />
+          <span>Continuação</span>
+          <div className="h-px flex-1 bg-border/70" />
+        </div>
+      ) : null}
+      {turn.userMsg &&
+        (() => {
+          const text = getTextFromParts(turn.userMsg!.parts ?? [], "");
+          const hasParts = (turn.userMsg!.parts ?? []).length > 0;
+          if (!text && !hasParts) return null;
+          const userCreatedAt = (turn.userMsg as { createdAt?: Date | string })
+            ?.createdAt;
+          const userCopyKey = `user-${turn.userMsg.id}`;
+          const userCopyVisible = activeCopyId === userCopyKey;
+          const userTimestamp =
+            isMounted && userCreatedAt
+              ? formatTimestamp(new Date(userCreatedAt))
+              : undefined;
+          const showUserToolbar =
+            (showCopyToolbar && Boolean(text)) || Boolean(userTimestamp);
+          return (
+            <div className="group/user-message">
+              <UserMessageComponent
+                message={turn.userMsg}
+                className={classNames?.userMessage}
+                enableImagePreview={enableImagePreview}
+              />
+              {showUserToolbar ? (
+                <MessageToolbar
+                  text={showCopyToolbar ? text : ""}
+                  timestamp={userTimestamp}
+                  heightClass="h-[28px]"
+                  hoverClass="group-hover/user-message:opacity-100 group-hover/user-message:pointer-events-auto"
+                  isVisible={userCopyVisible}
+                  alignClass="justify-end"
+                  onCopied={() => onCopied(userCopyKey)}
+                />
+              ) : null}
+            </div>
+          );
+        })()}
+
+      {turn.assistantMsgs.length > 0 &&
+        !(isLastTurn && showPlanning) &&
+        (() => {
+          const assistantText = getTextFromParts(
+            turn.assistantMsgs.flatMap((msg) => msg.parts ?? []),
+            "\n\n",
+          );
+          const isTurnStreaming = isStreaming && isLastTurn;
+          const showToolbar =
+            showCopyToolbar &&
+            Boolean(assistantText.trim()) &&
+            !isTurnStreaming;
+          const copyKey = `assistant-${turnKey}-all`;
+          const toolbarText = showCopyToolbar ? assistantText : "";
+
+          return (
+            <div
+              className={cn(
+                "group/assistant-turn",
+                assistantBubbleClass && "flex justify-start",
+              )}
+            >
+              <div
+                className={cn(
+                  assistantBubbleClass &&
+                    "flex w-full max-w-[min(92%,30rem)] flex-col gap-1",
+                )}
+              >
+                {assistantBubbleClass ? (
+                  <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                    Agente
+                  </span>
+                ) : null}
+                <div
+                  className={cn(
+                    assistantBubbleClass ?? "w-full space-y-1.5",
+                  )}
+                >
+                  <div className="flex flex-col gap-1.5">
+                    {turn.assistantMsgs.map((msg, i) => {
+                      const isLastMsg =
+                        isLastTurn && i === turn.assistantMsgs.length - 1;
+                      return (
+                        <AssistantParts
+                          key={msg.id}
+                          msg={msg}
+                          isLast={isLastMsg}
+                          isStreaming={isStreaming}
+                          suppressQuestionTool={suppressQuestionTool}
+                          ToolRendererComponent={CustomToolRenderer}
+                          GroupedToolsComponent={CustomGroupedTools}
+                          groupConsecutiveTools={groupConsecutiveTools}
+                          toolRenderers={toolRenderers}
+                        />
+                      );
+                    })}
+                  </div>
+                  {showToolbar ? (
+                    <MessageToolbar
+                      text={toolbarText}
+                      heightClass="h-[48px] flex items-start w-full"
+                      hoverClass="group-hover/assistant-turn:opacity-100 group-hover/assistant-turn:pointer-events-auto"
+                      isVisible={activeCopyId === copyKey}
+                      alignClass="justify-start"
+                      onCopied={() => onCopied(copyKey)}
+                    />
+                  ) : activeCopyId === copyKey ? (
+                    <MessageToolbar
+                      text={toolbarText}
+                      heightClass="h-[48px] flex items-start w-full"
+                      hoverClass="group-hover/assistant-turn:opacity-100 group-hover/assistant-turn:pointer-events-auto"
+                      isVisible={true}
+                      alignClass="justify-start"
+                      onCopied={() => onCopied(copyKey)}
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+      {isLastTurn && showPlanning ? (
+        <ToolRowBase
+          icon={<SpiralLoader size={12} />}
+          shimmerLabel={planningLabel}
+          completeLabel="Done"
+          isAnimating={true}
+        />
+      ) : null}
+    </div>
+  );
+});
+
 export const MessageList = memo(function MessageList({
   messages,
   status,
@@ -288,6 +497,8 @@ export const MessageList = memo(function MessageList({
   initialScrollBehavior = "bottom",
   enableImagePreview = true,
   groupConsecutiveTools = false,
+  virtualized = false,
+  showTurnDividers = false,
   slots,
   classNames,
   toolRenderers,
@@ -400,6 +611,7 @@ export const MessageList = memo(function MessageList({
   }, [isAtBottom]);
 
   useLayoutEffect(() => {
+    if (virtualized) return;
     const container = chatContainerRef.current;
     const contentWrapper = contentWrapperRef.current;
     if (!container || !contentWrapper) return;
@@ -420,7 +632,9 @@ export const MessageList = memo(function MessageList({
       if (newContentHeight === lastContentHeight) return;
       lastContentHeight = newContentHeight;
 
-      if (!shouldAutoScrollRef.current) {
+      if (shouldAutoScrollRef.current) {
+        scrollToBottomInstant();
+      } else {
         const newScrollHeight = container.scrollHeight;
         if (newScrollHeight !== prevScrollHeight && prevScrollHeight > 0) {
           const delta = newScrollHeight - prevScrollHeight;
@@ -432,7 +646,7 @@ export const MessageList = memo(function MessageList({
 
     resizeObserver.observe(contentWrapper);
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [virtualized, initialScrollBehavior, scrollToBottomInstant]);
 
   const normalizedMessages = useMemo(
     () => normalizeMessages(messages),
@@ -502,6 +716,56 @@ export const MessageList = memo(function MessageList({
     return cancel;
   }, [lastUserMessageId, showPlanning, scrollToBottomSettled]);
 
+  const rowVirtualizer = useVirtualizer({
+    count: virtualized ? turns.length : 0,
+    getScrollElement: () => chatContainerRef.current,
+    estimateSize: () => 200,
+    overscan: 4,
+    getItemKey: (index: number) => turns[index]?.userMsg?.id ?? `turn-${index}`,
+  });
+
+  const followScrollIfPinned = useCallback(() => {
+    if (!shouldAutoScrollRef.current || turns.length === 0) return;
+    if (virtualized) {
+      rowVirtualizer.scrollToIndex(turns.length - 1, { align: "end" });
+      return;
+    }
+    scrollToBottomInstant();
+  }, [virtualized, turns.length, rowVirtualizer, scrollToBottomInstant]);
+
+  const followScrollIfPinnedSettled = useCallback(() => {
+    followScrollIfPinned();
+    let rafOne = 0;
+    let rafTwo = 0;
+    rafOne = requestAnimationFrame(() => {
+      followScrollIfPinned();
+      rafTwo = requestAnimationFrame(followScrollIfPinned);
+    });
+    return () => {
+      cancelAnimationFrame(rafOne);
+      cancelAnimationFrame(rafTwo);
+    };
+  }, [followScrollIfPinned]);
+
+  useLayoutEffect(() => {
+    if (!virtualized) return;
+    if (turns.length === 0) return;
+    if (initialScrollBehavior === "top") {
+      const container = chatContainerRef.current;
+      if (container) container.scrollTop = 0;
+      shouldAutoScrollRef.current = false;
+      return;
+    }
+    shouldAutoScrollRef.current = true;
+    rowVirtualizer.scrollToIndex(turns.length - 1, { align: "end" });
+  }, [virtualized, initialScrollBehavior, turns.length, rowVirtualizer]);
+
+  useLayoutEffect(() => {
+    return followScrollIfPinnedSettled();
+  }, [normalizedMessages, followScrollIfPinnedSettled]);
+
+  const virtualItems = virtualized ? rowVirtualizer.getVirtualItems() : [];
+
   return (
     <div
       ref={containerRefCallback}
@@ -511,141 +775,85 @@ export const MessageList = memo(function MessageList({
         className,
       )}
     >
-      <div ref={contentWrapperRef} className="mx-auto px-4 py-6 max-w-an">
-        <div className="space-y-2">
-          {turns.map((turn, turnIndex) => {
-            const isLastTurn = turnIndex === turns.length - 1;
-            const turnKey = turn.userMsg?.id ?? `turn-${turnIndex}`;
-
-            return (
-              <div key={turnKey} className="relative space-y-2">
-                {turn.userMsg &&
-                  (() => {
-                    const text = getTextFromParts(
-                      turn.userMsg!.parts ?? [],
-                      "",
-                    );
-                    const hasParts = (turn.userMsg!.parts ?? []).length > 0;
-                    if (!text && !hasParts) return null;
-                    const userCreatedAt = (
-                      turn.userMsg as { createdAt?: Date | string }
-                    )?.createdAt;
-                    const userCopyKey = `user-${turn.userMsg.id}`;
-                    const userCopyVisible = activeCopyId === userCopyKey;
-                    const userTimestamp =
-                      isMounted && userCreatedAt
-                        ? formatTimestamp(new Date(userCreatedAt))
-                        : undefined;
-                    // Only render the toolbar when it has content — copy
-                    // button (gated by showCopyToolbar) or a timestamp.
-                    // Otherwise a 28px-tall empty row inflates the gap to the
-                    // assistant reply.
-                    const showUserToolbar =
-                      (showCopyToolbar && Boolean(text)) ||
-                      Boolean(userTimestamp);
-                    return (
-                      <div className="group/user-message">
-                        <CustomUserMessage
-                          message={turn.userMsg}
-                          className={classNames?.userMessage}
-                          enableImagePreview={enableImagePreview}
-                        />
-                        {showUserToolbar && (
-                          <MessageToolbar
-                            text={showCopyToolbar ? text : ""}
-                            timestamp={userTimestamp}
-                            heightClass="h-[28px]"
-                            hoverClass="group-hover/user-message:opacity-100 group-hover/user-message:pointer-events-auto"
-                            isVisible={userCopyVisible}
-                            alignClass="justify-end"
-                            onCopied={() => markCopied(userCopyKey)}
-                          />
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                {turn.assistantMsgs.length > 0 &&
-                  !(isLastTurn && showPlanning) &&
-                  (() => {
-                    const assistantText = getTextFromParts(
-                      turn.assistantMsgs.flatMap((msg) => msg.parts ?? []),
-                      "\n\n",
-                    );
-                    const isTurnStreaming = isStreaming && isLastTurn;
-                    // Only reserve toolbar height when there's actually
-                    // something to show in it. With showCopyToolbar=false the
-                    // toolbar would otherwise render as a 48px-tall empty box,
-                    // creating large gaps between assistant turns.
-                    const showToolbar =
-                      showCopyToolbar &&
-                      Boolean(assistantText.trim()) &&
-                      !isTurnStreaming;
-                    const copyKey = `assistant-${turnKey}-all`;
-                    const toolbarText = showCopyToolbar ? assistantText : "";
-
-                    return (
-                      <div className="group/assistant-turn">
-                        <div className="flex flex-col gap-3">
-                          {turn.assistantMsgs.map((msg, i) => {
-                            const isLastMsg =
-                              isLastTurn && i === turn.assistantMsgs.length - 1;
-                            return (
-                              <AssistantParts
-                                key={msg.id}
-                                msg={msg}
-                                isLast={isLastMsg}
-                                isStreaming={isStreaming}
-                                suppressQuestionTool={suppressQuestionTool}
-                                ToolRendererComponent={CustomToolRenderer}
-                                GroupedToolsComponent={CustomGroupedTools}
-                                groupConsecutiveTools={groupConsecutiveTools}
-                                toolRenderers={toolRenderers}
-                              />
-                            );
-                          })}
-                        </div>
-                        {showToolbar ? (
-                          <MessageToolbar
-                            text={toolbarText}
-                            heightClass="h-[48px] flex items-start w-full"
-                            hoverClass="group-hover/assistant-turn:opacity-100 group-hover/assistant-turn:pointer-events-auto"
-                            isVisible={activeCopyId === copyKey}
-                            alignClass="justify-start"
-                            onCopied={() => markCopied(copyKey)}
-                          />
-                        ) : activeCopyId === copyKey ? (
-                          <MessageToolbar
-                            text={toolbarText}
-                            heightClass="h-[48px] flex items-start w-full"
-                            hoverClass="group-hover/assistant-turn:opacity-100 group-hover/assistant-turn:pointer-events-auto"
-                            isVisible={true}
-                            alignClass="justify-start"
-                            onCopied={() => markCopied(copyKey)}
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })()}
-
-                {isLastTurn && showPlanning && (
-                  <ToolRowBase
-                    icon={<SpiralLoader size={12} />}
-                    shimmerLabel={planningLabel}
-                    completeLabel="Done"
-                    isAnimating={true}
+      <div
+        ref={contentWrapperRef}
+        className={cn("mx-auto px-4 py-6 max-w-an", classNames?.content)}
+      >
+        {virtualized ? (
+          <div
+            className="relative w-full"
+            style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+          >
+            {virtualItems.map((virtualRow) => {
+              const turn = turns[virtualRow.index];
+              if (!turn) return null;
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="absolute top-0 left-0 w-full pb-2"
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <MessageTurnRow
+                    turn={turn}
+                    turnIndex={virtualRow.index}
+                    turnCount={turns.length}
+                    isMounted={isMounted}
+                    isStreaming={isStreaming}
+                    showPlanning={showPlanning}
+                    planningLabel={planningLabel}
+                    showCopyToolbar={showCopyToolbar}
+                    suppressQuestionTool={suppressQuestionTool}
+                    enableImagePreview={enableImagePreview}
+                    activeCopyId={activeCopyId}
+                    classNames={classNames}
+                    CustomUserMessage={CustomUserMessage}
+                    CustomToolRenderer={CustomToolRenderer}
+                    CustomGroupedTools={CustomGroupedTools}
+                    groupConsecutiveTools={groupConsecutiveTools}
+                    showTurnDividers={showTurnDividers}
+                    toolRenderers={toolRenderers}
+                    onCopied={markCopied}
                   />
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {showAssistantBreathingSpace && (
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {turns.map((turn, turnIndex) => (
+              <MessageTurnRow
+                key={turn.userMsg?.id ?? `turn-${turnIndex}`}
+                turn={turn}
+                turnIndex={turnIndex}
+                turnCount={turns.length}
+                isMounted={isMounted}
+                isStreaming={isStreaming}
+                showPlanning={showPlanning}
+                planningLabel={planningLabel}
+                showCopyToolbar={showCopyToolbar}
+                suppressQuestionTool={suppressQuestionTool}
+                enableImagePreview={enableImagePreview}
+                activeCopyId={activeCopyId}
+                classNames={classNames}
+                CustomUserMessage={CustomUserMessage}
+                CustomToolRenderer={CustomToolRenderer}
+                CustomGroupedTools={CustomGroupedTools}
+                groupConsecutiveTools={groupConsecutiveTools}
+                showTurnDividers={showTurnDividers}
+                toolRenderers={toolRenderers}
+                onCopied={markCopied}
+              />
+            ))}
+          </div>
+        )}
+        {!virtualized && showAssistantBreathingSpace ? (
           <div
             aria-hidden="true"
             className="min-h-[max(140px,24vh)] mx-auto max-w-an w-full"
           />
-        )}
+        ) : null}
       </div>
     </div>
   );
