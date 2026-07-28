@@ -25,7 +25,7 @@ export type WorkerDeps = {
 	readonly nocobasePublicUrl?: string;
 	/** Poll interval in ms (default 1000). */
 	readonly pollIntervalMs?: number;
-	/** Hard cap on attempts before giving up (default 3). */
+	/** Hard cap on attempts before giving up (default 5). */
 	readonly maxAttempts?: number;
 	/**
 	 * Seconds to wait before the next pickup after a retryable failure.
@@ -49,7 +49,7 @@ export type WorkerHandle = { readonly stop: () => Promise<void> };
 
 export function startWorker(deps: WorkerDeps): WorkerHandle {
 	const pollIntervalMs = deps.pollIntervalMs ?? 1000;
-	const maxAttempts = deps.maxAttempts ?? 3;
+	const maxAttempts = deps.maxAttempts ?? 5;
 	const retryBackoffSeconds =
 		deps.retryBackoffSeconds ?? defaultRetryBackoffSeconds;
 	const log = deps.log ?? ((level, msg, data) => console[level](msg, data));

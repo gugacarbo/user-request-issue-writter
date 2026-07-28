@@ -19,6 +19,8 @@ export const env = createEnv({
 		LLM_API_KEY: z.string().min(1),
 		LLM_MODEL: z.string().min(1),
 		LOG_LEVEL: z.string().default("info"),
+		/** Max automatic worker attempts before marking a request failed (ADR-0008). */
+		WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
 		NOCOBASE_TOKEN: z.string().min(1).optional(),
 		NOCOBASE_PUBLIC_URL: z.url().optional(),
 	},

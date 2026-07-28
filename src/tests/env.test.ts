@@ -64,6 +64,18 @@ describe("env", () => {
 		expect(env.LOG_LEVEL).toBe("info");
 	});
 
+	it("applies WORKER_MAX_ATTEMPTS default when omitted", async () => {
+		delete process.env.WORKER_MAX_ATTEMPTS;
+		const { env } = await import("../config/env");
+		expect(env.WORKER_MAX_ATTEMPTS).toBe(5);
+	});
+
+	it("loads WORKER_MAX_ATTEMPTS from env", async () => {
+		process.env.WORKER_MAX_ATTEMPTS = "7";
+		const { env } = await import("../config/env");
+		expect(env.WORKER_MAX_ATTEMPTS).toBe(7);
+	});
+
 	it("throws when WEBHOOK_SECRET is missing", async () => {
 		delete process.env.WEBHOOK_SECRET;
 		await expect(import("../config/env")).rejects.toThrow(/WEBHOOK_SECRET/i);

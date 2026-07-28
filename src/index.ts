@@ -46,6 +46,7 @@ async function main(): Promise<void> {
 		}),
 		nocobaseToken: env.NOCOBASE_TOKEN,
 		nocobasePublicUrl: env.NOCOBASE_PUBLIC_URL,
+		maxAttempts: env.WORKER_MAX_ATTEMPTS,
 		log: (level, msg, data) => server.log[level]({ data }, msg),
 	});
 
