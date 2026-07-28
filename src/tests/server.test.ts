@@ -280,6 +280,45 @@ describe("server", () => {
 		expect(json.result).toBeNull();
 	});
 
+	it("dryRun=true returns agentError when LLM calls report_error", async () => {
+		const gh = mockGitHub();
+		const llm: LlmClient = {
+			chat: vi.fn(async () => ({
+				toolCalls: [
+					{
+						name: "report_error",
+						arguments: {
+							message: "Cannot draft issue",
+							code: "insufficient_context",
+						},
+					},
+				],
+				content: null,
+			})),
+		};
+		server = await app(deps(testDb.db, { github: gh, llm }));
+		const body = ticketPayload();
+		const res = await server.inject({
+			method: "POST",
+			url: "/webhook/github?dryRun=true",
+			headers: baseHeaders(),
+			payload: body,
+		});
+		expect(res.statusCode).toBe(200);
+		const json = res.json() as {
+			dryRun: boolean;
+			result: null;
+			agentError: { message: string; code: string | null };
+		};
+		expect(json.dryRun).toBe(true);
+		expect(json.result).toBeNull();
+		expect(json.agentError).toEqual({
+			message: "Cannot draft issue",
+			code: "insufficient_context",
+		});
+		expect(gh.createIssue).not.toHaveBeenCalled();
+	});
+
 	it("dryRun=true returns 500 when generateIssue throws", async () => {
 		const gh = mockGitHub();
 		const llm: LlmClient = {

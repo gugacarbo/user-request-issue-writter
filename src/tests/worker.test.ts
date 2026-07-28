@@ -72,6 +72,20 @@ function mockLlm(proposal: IssueProposal): LlmClient {
 	};
 }
 
+function mockLlmReportError(message: string, code?: string): LlmClient {
+	return {
+		chat: vi.fn(async () => ({
+			toolCalls: [
+				{
+					name: "report_error",
+					arguments: { message, ...(code ? { code } : {}) },
+				},
+			],
+			content: null,
+		})),
+	};
+}
+
 describe("worker", () => {
 	let testDb: TestDb;
 	let worker: WorkerHandle;
@@ -228,6 +242,82 @@ describe("worker", () => {
 			{ timeout: 5_000 },
 		);
 		expect(gh.createIssue).not.toHaveBeenCalled();
+	}, 10_000);
+
+	it("marks failed without retry when the agent calls report_error", async () => {
+		const gh = mockGitHub();
+		const llm = mockLlmReportError("Repository not accessible", "repo_not_found");
+
+		const body = ticketPayload();
+		const requestId = assertInserted(
+			enqueueRequest(
+				{ db: testDb.db },
+				{
+					bodyHash: bodyHash(body),
+					owner: "owner",
+					repo: "owner/repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					payload: body,
+				},
+			),
+		);
+
+		worker = startWorker({
+			db: testDb.db,
+			github: gh,
+			llm,
+			pollIntervalMs: 10,
+			maxAttempts: 3,
+		});
+
+		await vi.waitFor(
+			() => {
+				const req = getRequest({ db: testDb.db }, requestId);
+				expect(req?.status).toBe("failed");
+				expect(req?.lastError).toBe("repo_not_found: Repository not accessible");
+			},
+			{ timeout: 5_000 },
+		);
+		expect(gh.createIssue).not.toHaveBeenCalled();
+		const queueRow = getQueueByRequest({ db: testDb.db }, requestId);
+		expect(queueRow?.status).toBe("failed");
+	}, 10_000);
+
+	it("marks failed without code prefix when report_error omits code", async () => {
+		const gh = mockGitHub();
+		const llm = mockLlmReportError("Cannot continue");
+
+		const body = ticketPayload();
+		const requestId = assertInserted(
+			enqueueRequest(
+				{ db: testDb.db },
+				{
+					bodyHash: bodyHash(body),
+					owner: "owner",
+					repo: "owner/repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					payload: body,
+				},
+			),
+		);
+
+		worker = startWorker({
+			db: testDb.db,
+			github: gh,
+			llm,
+			pollIntervalMs: 10,
+		});
+
+		await vi.waitFor(
+			() => {
+				expect(getRequest({ db: testDb.db }, requestId)?.lastError).toBe(
+					"Cannot continue",
+				);
+			},
+			{ timeout: 5_000 },
+		);
 	}, 10_000);
 
 	it("marks failed when stored ticket payload is invalid", async () => {

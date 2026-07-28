@@ -129,6 +129,20 @@ describe("mapToolOutput", () => {
 			text: "a\nb",
 		});
 	});
+
+	it("parses read_file and get_repo_info outputs", () => {
+		expect(mapToolOutput("read_file", "line")).toEqual({
+			content: "line",
+			lineCount: 1,
+		});
+		expect(mapToolOutput("get_repo_info", "Description: demo")).toEqual({
+			text: "Description: demo",
+		});
+	});
+
+	it("wraps unknown tools as text", () => {
+		expect(mapToolOutput("custom_tool", "payload")).toEqual({ text: "payload" });
+	});
 });
 
 describe("mergeLogRows", () => {
@@ -223,5 +237,162 @@ describe("llmLogsToUIMessages submit_issue", () => {
 		];
 		const messages = llmLogsToUIMessages(logs);
 		expect(messages.some((m) => m.id === "divider-2")).toBe(true);
+	});
+});
+
+describe("llmLogsToUIMessages report_error and errors", () => {
+	it("merges report_error into the existing tool part", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "llm response",
+				iteration: 0,
+				data: { toolCalls: ["report_error"] },
+			}),
+			row({
+				id: 2,
+				event: "report_error called",
+				iteration: 0,
+				toolName: "report_error",
+				data: {
+					toolIndex: 0,
+					message: "Repo inacessível",
+					code: "repo_not_found",
+				},
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		const assistant = messages.find((m) => m.id === "assistant-1");
+		const part = assistant?.parts?.[1] as {
+			type?: string;
+			state?: string;
+			output?: { message?: string };
+		};
+		expect(part?.type).toBe("tool-report_error");
+		expect(part?.state).toBe("output-available");
+		expect(part?.output?.message).toBe("Repo inacessível");
+	});
+
+	it("renders tool error state on the matching tool part", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "llm response",
+				iteration: 0,
+				data: { toolCalls: ["read_file"] },
+			}),
+			row({
+				id: 2,
+				event: "tool error",
+				iteration: 0,
+				toolName: "read_file",
+				data: { tool: "read_file", toolIndex: 0, error: "404 Not Found" },
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		const part = messages[0]?.parts?.[1] as {
+			state?: string;
+			output?: { error?: string };
+		};
+		expect(part?.state).toBe("output-error");
+		expect(part?.output?.error).toBe("404 Not Found");
+	});
+
+	it("renders agent timeout and marker events", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "agent timeout",
+				data: { timeoutMs: 1000, elapsedMs: 1200 },
+			}),
+			row({
+				id: 2,
+				event: "no tool calls, ending loop",
+				iteration: 3,
+				data: {},
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		expect(messages).toHaveLength(2);
+		expect((messages[0]?.parts?.[0] as { text: string }).text).toContain(
+			"Tempo máximo",
+		);
+		expect((messages[1]?.parts?.[0] as { text: string }).text).toContain(
+			"sem chamar ferramentas",
+		);
+	});
+
+	it("creates a standalone tool dispatch message when no prior turn exists", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "tool dispatched",
+				iteration: 2,
+				toolName: "read_file",
+				data: {
+					tool: "read_file",
+					toolIndex: 0,
+					arguments: { path: "src/main.ts" },
+				},
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		expect(messages[0]?.id).toBe("tool-dispatch-1");
+		const part = messages[0]?.parts?.[0] as {
+			type?: string;
+			input?: { path?: string };
+		};
+		expect(part?.type).toBe("tool-read_file");
+		expect(part?.input?.path).toBe("src/main.ts");
+	});
+
+	it("creates standalone submit_issue and report_error messages", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "submit_issue called",
+				iteration: 0,
+				data: { title: "Bug", labels: ["bug"] },
+			}),
+			row({
+				id: 2,
+				event: "report_error called",
+				data: { message: "Falhou" },
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		expect(messages.map((m) => m.id)).toEqual(["submit-1", "report-error-2"]);
+	});
+
+	it("creates standalone tool error message when no prior tool part exists", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "tool error",
+				iteration: 0,
+				toolName: "list_files",
+				data: { tool: "list_files", toolIndex: 0 },
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		expect(messages[0]?.id).toBe("tool-error-1");
+		const part = messages[0]?.parts?.[0] as { state?: string };
+		expect(part?.state).toBe("output-error");
+	});
+
+	it("renders unknown events without a tool name", () => {
+		const logs: LlmLogRow[] = [
+			row({ id: 1, event: "custom debug", data: { note: "hello" } }),
+		];
+		const messages = llmLogsToUIMessages(logs);
+		expect((messages[0]?.parts?.[0] as { text: string }).text).toContain(
+			"custom debug",
+		);
 	});
 });

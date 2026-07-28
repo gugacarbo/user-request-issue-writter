@@ -118,6 +118,23 @@ describe("tools", () => {
 		});
 	});
 
+	it("report_error uses a default message when empty", async () => {
+		const gh = mockGitHub();
+		const { dispatchTool } = await import("../llm/tools");
+		const result = await dispatchTool(
+			"report_error",
+			{ message: "   " },
+			gh,
+			"owner",
+			"repo",
+		);
+		expect(result).toEqual({
+			isTerminal: true,
+			kind: "report_error",
+			error: { message: "Agent reported an error.", code: undefined },
+		});
+	});
+
 	it("dispatchTool throws on unknown tool name", async () => {
 		const gh = mockGitHub();
 		const { dispatchTool } = await import("../llm/tools");
