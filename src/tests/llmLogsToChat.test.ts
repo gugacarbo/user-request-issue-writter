@@ -58,12 +58,36 @@ describe("llmLogsToUIMessages", () => {
 			toolCallId?: string;
 		}>;
 		expect(parts.map((p) => p.type)).toEqual([
-			"text",
 			"tool-list_files",
 			"tool-read_file",
 		]);
-		expect(parts[1]?.toolCallId).toBe(toolCallId("list_files", 0, 0));
-		expect(parts[2]?.toolCallId).toBe(toolCallId("read_file", 0, 1));
+		expect(parts[0]?.toolCallId).toBe(toolCallId("list_files", 0, 0));
+		expect(parts[1]?.toolCallId).toBe(toolCallId("read_file", 0, 1));
+	});
+
+	it("appends tool-only turns to the previous assistant message", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "llm response",
+				iteration: 0,
+				data: { toolCalls: ["list_files"] },
+			}),
+			row({
+				id: 2,
+				event: "llm response",
+				iteration: 1,
+				data: { toolCalls: ["read_file"] },
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		expect(messages.filter((m) => m.role === "assistant")).toHaveLength(1);
+		const parts = messages[0]?.parts as Array<{ type?: string }>;
+		expect(parts.map((p) => p.type)).toEqual([
+			"tool-list_files",
+			"tool-read_file",
+		]);
 	});
 
 	it("structures tool results for the issue tool renderers", () => {
@@ -192,7 +216,7 @@ describe("llmLogsToUIMessages submit_issue", () => {
 
 		const messages = llmLogsToUIMessages(logs);
 		const assistant = messages.find((m) => m.id === "assistant-1");
-		const part = assistant?.parts?.[1] as {
+		const part = assistant?.parts?.[0] as {
 			state?: string;
 			input?: { title?: string };
 			output?: { message?: string };
@@ -222,7 +246,7 @@ describe("llmLogsToUIMessages submit_issue", () => {
 
 		const messages = llmLogsToUIMessages(logs);
 		const assistant = messages.find((m) => m.id === "assistant-1");
-		const part = assistant?.parts?.[1] as {
+		const part = assistant?.parts?.[0] as {
 			state?: string;
 			output?: { text?: string };
 		};
@@ -264,7 +288,7 @@ describe("llmLogsToUIMessages report_error and errors", () => {
 
 		const messages = llmLogsToUIMessages(logs);
 		const assistant = messages.find((m) => m.id === "assistant-1");
-		const part = assistant?.parts?.[1] as {
+		const part = assistant?.parts?.[0] as {
 			type?: string;
 			state?: string;
 			output?: { message?: string };
@@ -292,7 +316,7 @@ describe("llmLogsToUIMessages report_error and errors", () => {
 		];
 
 		const messages = llmLogsToUIMessages(logs);
-		const part = messages[0]?.parts?.[1] as {
+		const part = messages[0]?.parts?.[0] as {
 			state?: string;
 			output?: { error?: string };
 		};
@@ -341,7 +365,7 @@ describe("llmLogsToUIMessages report_error and errors", () => {
 		];
 
 		const messages = llmLogsToUIMessages(logs);
-		expect(messages[0]?.id).toBe("tool-dispatch-1");
+		expect(messages[0]?.id).toBe("assistant-tool-0");
 		const part = messages[0]?.parts?.[0] as {
 			type?: string;
 			input?: { path?: string };

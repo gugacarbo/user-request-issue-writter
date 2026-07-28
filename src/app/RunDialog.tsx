@@ -63,10 +63,10 @@ export function RunDialog({
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
 			<DialogContent
-				className="flex max-h-[min(80vh,100%)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+				className="flex h-[min(88vh,920px)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
 				aria-label={`Execução #${requestId}`}
 			>
-				<DialogHeader className="border-b px-4 py-3">
+				<DialogHeader className="shrink-0 border-b px-4 py-3">
 					<DialogTitle className="flex items-center gap-2">
 						Execução #{requestId}
 						{isLive ? (
@@ -80,17 +80,20 @@ export function RunDialog({
 				<Tabs
 					value={tab}
 					onValueChange={(v) => setTab(v as "summary" | "logs")}
-					className="gap-0"
+					className="flex min-h-0 flex-1 flex-col gap-0"
 				>
 					<TabsList
 						variant="line"
-						className="w-full justify-start rounded-none border-b px-4"
+						className="w-full shrink-0 justify-start rounded-none border-b px-4"
 					>
 						<TabsTrigger value="summary">Resumo</TabsTrigger>
 						<TabsTrigger value="logs">Logs do agente</TabsTrigger>
 					</TabsList>
 
-					<TabsContent value="summary" className="p-4">
+					<TabsContent
+						value="summary"
+						className="min-h-0 flex-1 overflow-y-auto p-4"
+					>
 						{error ? (
 							<p className="text-sm text-muted-foreground">
 								Erro ao carregar: {error}
@@ -107,7 +110,10 @@ export function RunDialog({
 						)}
 					</TabsContent>
 
-					<TabsContent value="logs" className="p-4">
+					<TabsContent
+						value="logs"
+						className="flex min-h-0 flex-1 flex-col overflow-hidden p-4"
+					>
 						{error ? (
 							<p className="text-sm text-muted-foreground">
 								Erro ao carregar: {error}
@@ -121,7 +127,7 @@ export function RunDialog({
 									: "Nenhum log de agente para esta execução."}
 							</p>
 						) : (
-							<LogsPanel logs={run.logs} className="h-[min(50vh,400px)]" />
+							<LogsPanel logs={run.logs} className="min-h-0 flex-1" />
 						)}
 					</TabsContent>
 				</Tabs>
@@ -175,7 +181,7 @@ function RunSummary({
 			{retryError ? (
 				<p className="text-sm text-destructive">Erro ao reenfileirar: {retryError}</p>
 			) : null}
-			<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+			<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
 				<Row label="Status">
 					<StatusBadge status={request.status} />
 				</Row>

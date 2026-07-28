@@ -105,12 +105,12 @@ export function LogsPanel({
 }) {
 	const [view, setView] = useState<LogsView>("chat");
 	const capped = useMemo(() => logs.slice(-300), [logs]);
-	const panelHeight = className ?? "h-[360px]";
+	const fillsParent = Boolean(className?.includes("flex-1"));
 
 	return (
-		<div className="space-y-2">
+		<div className={cn("flex min-h-0 flex-col gap-2", className)}>
 			{showViewToggle ? (
-				<div className="flex justify-end gap-1">
+				<div className="flex shrink-0 justify-end gap-1">
 					<Button
 						type="button"
 						variant={view === "list" ? "secondary" : "ghost"}
@@ -132,11 +132,11 @@ export function LogsPanel({
 				</div>
 			) : null}
 
-			<div className={cn(panelHeight, "min-h-0")}>
+			<div className={cn("min-h-0", fillsParent ? "flex-1" : "h-[360px]")}>
 				{view === "list" ? (
-					<LogsListView logs={capped} className={panelHeight} />
+					<LogsListView logs={capped} className="h-full" />
 				) : (
-					<LogsChatPanel logs={capped} className={panelHeight} />
+					<LogsChatPanel logs={capped} className="h-full" />
 				)}
 			</div>
 		</div>

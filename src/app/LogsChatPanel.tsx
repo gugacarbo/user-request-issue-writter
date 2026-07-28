@@ -1,84 +1,65 @@
 import { MessageList } from "@agent-elements/message-list";
 import { ToolRenderer as DefaultToolRenderer } from "@agent-elements/tools/tool-renderer";
-import { type ComponentProps, useMemo } from "react";
+import { type ComponentProps, type ComponentType, useMemo } from "react";
 import {
 	GetRepoInfoToolPart,
 	ListFilesToolPart,
 	ReadFileToolPart,
 	ReportErrorToolPart,
+	SubmitIssueToolPart,
+	ToolCallsGroup,
 } from "./issueToolRenderers";
 import { llmLogsToUIMessages } from "./llmLogsToChat";
 import type { LlmLogRow } from "./types";
 
-function SubmitIssueFromPart({
+function LogsToolRenderer({
 	part,
-}: {
-	part: {
-		input?: unknown;
-		output?: unknown;
-		state?: string;
-	};
-}) {
-	const input = (part.input ?? {}) as Record<string, unknown>;
-	const output = (part.output ?? {}) as Record<string, unknown>;
-	const title =
-		typeof input.title === "string"
-			? input.title
-			: typeof output.title === "string"
-				? output.title
-				: "Rascunho da issue";
-	const body =
-		typeof input.body === "string"
-			? input.body
-			: typeof output.body === "string"
-				? output.body
-				: undefined;
-	const labels = Array.isArray(input.labels)
-		? input.labels.filter((l) => typeof l === "string")
-		: Array.isArray(output.labels)
-			? output.labels.filter((l) => typeof l === "string")
-			: [];
-	const isPending =
-		part.state !== "output-available" && part.state !== "output-error";
-
-	return (
-		<div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-			<p className="font-medium">
-				{isPending ? "Enviando rascunho da issue…" : "Rascunho da issue enviado"}
-			</p>
-			<p className="mt-1 font-medium text-foreground">{title}</p>
-			{labels.length > 0 ? (
-				<p className="mt-1 text-xs text-muted-foreground">
-					Labels: {labels.join(", ")}
-				</p>
-			) : null}
-			{body ? (
-				<pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-foreground/90">
-					{body}
-				</pre>
-			) : null}
-		</div>
-	);
-}
-
-function LogsToolRenderer(props: ComponentProps<typeof DefaultToolRenderer>) {
-	const partType = props.part?.type as string | undefined;
+	nested = false,
+	...props
+}: ComponentProps<typeof DefaultToolRenderer> & { nested?: boolean }) {
+	const partType = part?.type as string | undefined;
 	if (partType === "tool-submit_issue") {
-		return <SubmitIssueFromPart part={props.part} />;
+		return <SubmitIssueToolPart part={part} nested={nested} />;
 	}
 	if (partType === "tool-list_files") {
-		return <ListFilesToolPart part={props.part} />;
+		return <ListFilesToolPart part={part} nested={nested} />;
 	}
 	if (partType === "tool-read_file") {
-		return <ReadFileToolPart part={props.part} />;
+		return <ReadFileToolPart part={part} nested={nested} />;
 	}
 	if (partType === "tool-get_repo_info") {
-		return <GetRepoInfoToolPart part={props.part} />;
+		return <GetRepoInfoToolPart part={part} nested={nested} />;
 	}
 	if (partType === "tool-report_error") {
-		return <ReportErrorToolPart part={props.part} />;
+		return <ReportErrorToolPart part={part} nested={nested} />;
 	}
-	return <DefaultToolRenderer {...props} />;
+	return <DefaultToolRenderer part={part} {...props} />;
+}
+
+type LogsToolPart = NonNullable<
+	ComponentProps<typeof DefaultToolRenderer>["part"]
+>;
+
+type LogsGroupedToolsProps = {
+	tools: LogsToolPart[];
+	ToolRendererComponent: ComponentType<ComponentProps<typeof DefaultToolRenderer>>;
+	chatStatus?: string;
+	toolRenderers?: Record<string, ComponentType<unknown>>;
+};
+
+function LogsGroupedTools({ tools }: LogsGroupedToolsProps) {
+	return (
+		<ToolCallsGroup
+			tools={tools}
+			renderTool={(tool, index) => (
+				<LogsToolRenderer
+					key={tool.toolCallId ?? `tool-${index}`}
+					part={tool}
+					nested
+				/>
+			)}
+		/>
+	);
 }
 
 export function LogsChatPanel({
@@ -106,7 +87,13 @@ export function LogsChatPanel({
 				initialScrollBehavior="top"
 				enableImagePreview={false}
 				showCopyToolbar
-				slots={{ ToolRenderer: LogsToolRenderer }}
+				groupConsecutiveTools
+				slots={{
+					ToolRenderer: LogsToolRenderer,
+					GroupedTools: LogsGroupedTools as NonNullable<
+						ComponentProps<typeof MessageList>["slots"]
+					>["GroupedTools"],
+				}}
 				className="h-full min-h-0"
 			/>
 		</div>

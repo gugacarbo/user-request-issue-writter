@@ -38,6 +38,8 @@ export type MessageListProps = {
    * the fullscreen lightbox preview. Set to false to disable previews.
    */
   enableImagePreview?: boolean;
+  /** Collapse consecutive tool parts into one grouped row (logs UI). */
+  groupConsecutiveTools?: boolean;
   slots?: {
     UserMessage?: React.ComponentType<{
       message: UIMessage;
@@ -45,6 +47,7 @@ export type MessageListProps = {
       enableImagePreview?: boolean;
     }>;
     ToolRenderer?: React.ComponentType<ToolRendererProps>;
+    GroupedTools?: React.ComponentType<GroupedToolsProps>;
   };
   classNames?: {
     userMessage?: string;
@@ -74,6 +77,13 @@ type ToolPartBase = {
 type ToolRendererProps = {
   part: ToolPartBase;
   nestedTools?: ToolPartBase[];
+  chatStatus?: string;
+  toolRenderers?: Record<string, React.ComponentType<CustomToolRendererProps>>;
+};
+
+type GroupedToolsProps = {
+  tools: ToolPartBase[];
+  ToolRendererComponent: React.ComponentType<ToolRendererProps>;
   chatStatus?: string;
   toolRenderers?: Record<string, React.ComponentType<CustomToolRendererProps>>;
 };
@@ -277,6 +287,7 @@ export const MessageList = memo(function MessageList({
   suppressQuestionTool = false,
   initialScrollBehavior = "bottom",
   enableImagePreview = true,
+  groupConsecutiveTools = false,
   slots,
   classNames,
   toolRenderers,
@@ -295,6 +306,7 @@ export const MessageList = memo(function MessageList({
 
   const CustomUserMessage = slots?.UserMessage || UserMessage;
   const CustomToolRenderer = slots?.ToolRenderer || DefaultToolRenderer;
+  const CustomGroupedTools = slots?.GroupedTools;
 
   const markCopied = useCallback((id: string) => {
     setActiveCopyId(id);
@@ -585,6 +597,8 @@ export const MessageList = memo(function MessageList({
                                 isStreaming={isStreaming}
                                 suppressQuestionTool={suppressQuestionTool}
                                 ToolRendererComponent={CustomToolRenderer}
+                                GroupedToolsComponent={CustomGroupedTools}
+                                groupConsecutiveTools={groupConsecutiveTools}
                                 toolRenderers={toolRenderers}
                               />
                             );
@@ -642,6 +656,8 @@ function AssistantParts({
   isStreaming,
   suppressQuestionTool,
   ToolRendererComponent,
+  GroupedToolsComponent,
+  groupConsecutiveTools,
   toolRenderers,
 }: {
   msg: UIMessage;
@@ -649,6 +665,8 @@ function AssistantParts({
   isStreaming: boolean;
   suppressQuestionTool: boolean;
   ToolRendererComponent: React.ComponentType<ToolRendererProps>;
+  GroupedToolsComponent?: React.ComponentType<GroupedToolsProps>;
+  groupConsecutiveTools?: boolean;
   toolRenderers?: Record<string, React.ComponentType<CustomToolRendererProps>>;
 }) {
   const parts = useMemo(
@@ -734,6 +752,61 @@ function AssistantParts({
           continue;
         }
 
+        if (
+          groupConsecutiveTools &&
+          GroupedToolsComponent &&
+          shouldGroupToolPart(part)
+        ) {
+          const group: ToolPartBase[] = [];
+          while (i < parts.length) {
+            const candidate = parts[i];
+            if (!isV5ToolPart(candidate) || !shouldGroupToolPart(candidate)) {
+              break;
+            }
+            if (suppressQuestionTool && candidate.type === "tool-Question") {
+              break;
+            }
+            if (
+              candidate.toolCallId &&
+              nestedToolIds.has(candidate.toolCallId)
+            ) {
+              break;
+            }
+            group.push(candidate);
+            i++;
+          }
+
+          if (group.length >= 2) {
+            const chatStreamingStatus =
+              isLast && isStreaming ? "streaming" : undefined;
+            elems.push(
+              <GroupedToolsComponent
+                key={`${msg.id}-tool-group-${i}`}
+                tools={group}
+                ToolRendererComponent={ToolRendererComponent}
+                chatStatus={chatStreamingStatus}
+                toolRenderers={toolRenderers}
+              />,
+            );
+            continue;
+          }
+
+          if (group.length === 1) {
+            const single = group[0]!;
+            const chatStreamingStatus =
+              isLast && isStreaming ? "streaming" : undefined;
+            elems.push(
+              <ToolRendererComponent
+                key={single.toolCallId ?? `${msg.id}-tool-${i}`}
+                part={single}
+                chatStatus={chatStreamingStatus}
+                toolRenderers={toolRenderers}
+              />,
+            );
+            continue;
+          }
+        }
+
         const chatStreamingStatus =
           isLast && isStreaming ? "streaming" : undefined;
         const toolCallId = part.toolCallId;
@@ -766,14 +839,24 @@ function AssistantParts({
     isStreaming,
     suppressQuestionTool,
     ToolRendererComponent,
+    GroupedToolsComponent,
+    groupConsecutiveTools,
     toolRenderers,
   ]);
 
   if (elements.length > 1) {
     return (
-      <div className="group/assistant-turn flex flex-col gap-3">{elements}</div>
+      <div className="group/assistant-turn flex flex-col gap-1.5">{elements}</div>
     );
   }
 
   return <div className="group/assistant-turn">{elements}</div>;
+}
+
+function shouldGroupToolPart(part: ToolPartBase): boolean {
+  return (
+    part.type === "tool-list_files" ||
+    part.type === "tool-read_file" ||
+    part.type === "tool-get_repo_info"
+  );
 }

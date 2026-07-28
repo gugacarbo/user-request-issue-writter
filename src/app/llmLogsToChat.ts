@@ -158,6 +158,39 @@ function summarizeMarkerData(data: Record<string, unknown> | null): string {
 	return preview;
 }
 
+function lastAssistantMessage(
+	messages: UIMessage[],
+): (UIMessage & { parts: unknown[] }) | null {
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		const message = messages[i];
+		if (message?.role === "assistant") {
+			return message as UIMessage & { parts: unknown[] };
+		}
+	}
+	return null;
+}
+
+function appendAssistantPart(messages: UIMessage[], part: unknown): void {
+	const last = lastAssistantMessage(messages);
+	if (last) {
+		last.parts.push(part);
+		return;
+	}
+	messages.push(uiMessage(`assistant-tool-${messages.length}`, "assistant", [part]));
+}
+
+function appendAssistantParts(messages: UIMessage[], parts: unknown[]): void {
+	if (parts.length === 0) return;
+	const last = lastAssistantMessage(messages);
+	if (last) {
+		last.parts.push(...parts);
+		return;
+	}
+	messages.push(
+		uiMessage(`assistant-tools-${messages.length}`, "assistant", parts),
+	);
+}
+
 /**
  * Replays persisted `llm_logs` rows as AI SDK `UIMessage`s for Agent UI
  * (`MessageList`). Pairs tool dispatches/results with the matching LLM turn.
@@ -194,38 +227,45 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 				break;
 
 			case "llm response": {
-				const parts: Array<{ type: "text"; text: string } | ToolPart> = [];
-				if (log.iteration !== null) {
-					parts.push({
-						type: "text",
-						text: `**Turno ${log.iteration + 1}**`,
-					});
-				}
-				const meta = formatLlmMeta(log.data);
-				if (meta) {
-					parts.push({ type: "text", text: meta });
-				}
 				const content = log.data?.content;
-				if (typeof content === "string" && content.trim()) {
-					parts.push({ type: "text", text: content });
+				const hasContent =
+					typeof content === "string" && content.trim().length > 0;
+				const toolCalls = log.data?.toolCalls;
+				const toolNames = Array.isArray(toolCalls)
+					? toolCalls.filter((name): name is string => typeof name === "string")
+					: [];
+				const toolParts: ToolPart[] = toolNames.map((name, i) => {
+					const id = toolCallId(name, log.iteration, i);
+					const part: ToolPart = {
+						type: toolPartType(name),
+						toolCallId: id,
+						state: "input-available",
+						input: {},
+					};
+					tools.set(id, part);
+					return part;
+				});
+
+				if (!hasContent && toolParts.length > 0 && lastAssistantMessage(messages)) {
+					appendAssistantParts(messages, toolParts);
+					break;
 				}
 
-				const toolCalls = log.data?.toolCalls;
-				if (Array.isArray(toolCalls)) {
-					for (let i = 0; i < toolCalls.length; i++) {
-						const name = toolCalls[i];
-						if (typeof name !== "string") continue;
-						const id = toolCallId(name, log.iteration, i);
-						const part: ToolPart = {
-							type: toolPartType(name),
-							toolCallId: id,
-							state: "input-available",
-							input: {},
-						};
-						tools.set(id, part);
-						parts.push(part);
+				const parts: Array<{ type: "text"; text: string } | ToolPart> = [];
+				if (hasContent) {
+					if (log.iteration !== null) {
+						parts.push({
+							type: "text",
+							text: `**Turno ${log.iteration + 1}**`,
+						});
+					}
+					parts.push({ type: "text", text: content.trim() });
+					const meta = formatLlmMeta(log.data);
+					if (meta) {
+						parts.push({ type: "text", text: meta });
 					}
 				}
+				parts.push(...toolParts);
 
 				if (parts.length > 0) {
 					messages.push(uiMessage(`assistant-${log.id}`, "assistant", parts));
@@ -253,9 +293,7 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 						input: mapToolInput(args),
 					};
 					tools.set(id, part);
-					messages.push(
-						uiMessage(`tool-dispatch-${log.id}`, "assistant", [part]),
-					);
+					appendAssistantPart(messages, part);
 				}
 				break;
 			}
