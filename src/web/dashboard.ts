@@ -125,12 +125,14 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 
 		let lastQueueId = 0;
 		let lastRequestId = 0;
+		let lastFingerprint = "";
 
 		const sendSnapshot = () => {
 			const queue = listQueueSummary(dashboardDeps, 100);
 			const counts = countByStatus(dashboardDeps);
 			lastQueueId = queue[0]?.id ?? 0;
 			lastRequestId = queue[0]?.requestId ?? 0;
+			lastFingerprint = queueFingerprint(queue);
 			return reply.sse.send({
 				event: "snapshot",
 				data: attachConfig({ counts, queue, asOf: Date.now() }),
@@ -144,10 +146,16 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 				clearInterval(interval);
 				return;
 			}
-			const tick = computeQueueTick(dashboardDeps, lastQueueId, lastRequestId);
+			const tick = computeQueueTick(
+				dashboardDeps,
+				lastQueueId,
+				lastRequestId,
+				lastFingerprint,
+			);
 			if (!tick) return;
 			lastQueueId = tick.lastQueueId;
 			lastRequestId = tick.lastRequestId;
+			lastFingerprint = tick.lastFingerprint;
 			try {
 				const event =
 					tick.event.event === "snapshot"
@@ -256,22 +264,42 @@ export type QueueTickResult = {
 	event: { event: "snapshot" | "counts"; data: unknown };
 	lastQueueId: number;
 	lastRequestId: number;
+	lastFingerprint: string;
 };
+
+/** Stable digest of queue rows — detects status/field changes regardless of timestamp granularity. */
+function queueFingerprint(
+	queue: ReturnType<typeof listQueueSummary>,
+): string {
+	return queue
+		.map(
+			(r) =>
+				`${r.id}\t${r.requestId}\t${r.status}\t${r.attempts}\t${r.issueNumber ?? ""}\t${r.lastError ?? ""}`,
+		)
+		.join("\n");
+}
 
 export function computeQueueTick(
 	deps: DashboardDeps,
 	lastQueueId: number,
 	lastRequestId: number,
+	lastFingerprint: string,
 ): QueueTickResult | null {
 	const counts = countByStatus(deps);
 	const queue = listQueueSummary(deps, 100);
 	const newestQueueId = queue[0]?.id ?? 0;
 	const newestRequestId = queue[0]?.requestId ?? 0;
-	if (newestQueueId === lastQueueId && newestRequestId === lastRequestId) {
+	const fingerprint = queueFingerprint(queue);
+	const queueChanged =
+		newestQueueId !== lastQueueId ||
+		newestRequestId !== lastRequestId ||
+		fingerprint !== lastFingerprint;
+	if (!queueChanged) {
 		return {
 			event: { event: "counts", data: counts },
 			lastQueueId,
 			lastRequestId,
+			lastFingerprint,
 		};
 	}
 	return {
@@ -281,6 +309,7 @@ export function computeQueueTick(
 		},
 		lastQueueId: newestQueueId,
 		lastRequestId: newestRequestId,
+		lastFingerprint: fingerprint,
 	};
 }
 

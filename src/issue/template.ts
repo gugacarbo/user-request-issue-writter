@@ -141,7 +141,7 @@ export type BuildIssueBodyInput = {
 	readonly agentBody: string;
 	readonly rawUserMessage: string;
 	readonly ticket?: TicketHeaderInput;
-	/** Pre-rendered screenshot markdown (preferred — already hosted for GitHub). */
+	/** Pre-rendered screenshot markdown (preferred). */
 	readonly screenshotMarkdown?: string | null;
 	readonly screenshot?: string;
 	readonly requesterName: string;

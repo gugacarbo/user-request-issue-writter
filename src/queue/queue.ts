@@ -157,23 +157,32 @@ export function claimNextDue(deps: QueueDeps): {
 	attempts: number;
 } | null {
 	const now = Math.floor(Date.now() / 1000);
-	const claimed = deps.db
-		.update(queueTable)
-		.set({
-			status: "processing",
-			attempts: sql`${queueTable.attempts} + 1`,
-			updatedAt: now,
-		})
-		.where(
-			and(eq(queueTable.status, "pending"), lte(queueTable.nextRunAt, now)),
-		)
-		.returning({
-			queueId: queueTable.id,
-			requestId: queueTable.requestId,
-			attempts: queueTable.attempts,
-		})
-		.get();
-	return claimed ?? null;
+	return deps.db.transaction((tx) => {
+		const claimed = tx
+			.update(queueTable)
+			.set({
+				status: "processing",
+				attempts: sql`${queueTable.attempts} + 1`,
+				updatedAt: now,
+			})
+			.where(
+				and(eq(queueTable.status, "pending"), lte(queueTable.nextRunAt, now)),
+			)
+			.returning({
+				queueId: queueTable.id,
+				requestId: queueTable.requestId,
+				attempts: queueTable.attempts,
+			})
+			.get();
+		if (!claimed) return null;
+
+		tx.update(requests)
+			.set({ status: "processing", updatedAt: now })
+			.where(eq(requests.id, claimed.requestId))
+			.run();
+
+		return claimed;
+	});
 }
 
 export type FinalizeInput = {
@@ -310,12 +319,30 @@ export function finalizeProcessing(
  */
 export function requeueStaleProcessing(deps: QueueDeps): number {
 	const now = Math.floor(Date.now() / 1000);
-	const result = deps.db
-		.update(queueTable)
-		.set({ status: "pending", updatedAt: now })
-		.where(eq(queueTable.status, "processing"))
-		.run();
-	return result.changes;
+	return deps.db.transaction((tx) => {
+		const stale = tx
+			.select({ requestId: queueTable.requestId })
+			.from(queueTable)
+			.where(eq(queueTable.status, "processing"))
+			.all();
+
+		const result = tx
+			.update(queueTable)
+			.set({ status: "pending", updatedAt: now })
+			.where(eq(queueTable.status, "processing"))
+			.run();
+
+		for (const row of stale) {
+			tx.update(requests)
+				.set({ status: "pending", updatedAt: now })
+				.where(
+					and(eq(requests.id, row.requestId), eq(requests.status, "processing")),
+				)
+				.run();
+		}
+
+		return result.changes;
+	});
 }
 
 /** Append one LLM agent event to `llm_logs` (called from `onDebug`). */

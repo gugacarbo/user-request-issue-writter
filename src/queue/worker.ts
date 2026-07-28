@@ -176,12 +176,8 @@ async function processOne(
 			return;
 		}
 
-		const screenshotMarkdown = await prepareScreenshotMarkdown({
+		const screenshotMarkdown = prepareScreenshotMarkdown({
 			screenshot: ticket.screenshot,
-			owner: input.owner,
-			repo: input.repo,
-			github: deps.github,
-			nocobaseToken: deps.nocobaseToken,
 			nocobasePublicUrl: deps.nocobasePublicUrl,
 		});
 		const body = buildIssueBody({

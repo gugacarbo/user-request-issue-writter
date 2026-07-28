@@ -67,7 +67,7 @@ export function listQueueSummary(
 		.select({
 			id: queueTable.id,
 			requestId: queueTable.requestId,
-			status: queueTable.status,
+			status: requests.status,
 			attempts: queueTable.attempts,
 			lastError: queueTable.lastError,
 			nextRunAt: queueTable.nextRunAt,

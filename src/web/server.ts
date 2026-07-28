@@ -139,12 +139,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 						result: null,
 					});
 				}
-				const screenshotMarkdown = await prepareScreenshotMarkdown({
+				const screenshotMarkdown = prepareScreenshotMarkdown({
 					screenshot: ctx.screenshot,
-					owner: input.owner,
-					repo: input.repo,
-					github: deps.github,
-					nocobaseToken: deps.nocobaseToken,
 					nocobasePublicUrl: deps.nocobasePublicUrl,
 				});
 				return reply.code(200).send({

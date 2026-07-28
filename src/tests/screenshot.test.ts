@@ -1,5 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-import type { GitHubClient } from "../github/github";
+import { describe, expect, it } from "vitest";
 import {
 	isBaseUrlOnly,
 	isEmbeddableScreenshot,
@@ -81,138 +80,41 @@ describe("screenshot helpers", () => {
 		});
 	});
 
-	it("prepareScreenshotMarkdown re-hosts fetched images on GitHub", async () => {
-		const pngBytes = Buffer.from(
-			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-			"base64",
-		);
-		const fetchMock = vi.fn(async () => ({
-			ok: true,
-			headers: new Headers({ "content-type": "image/png" }),
-			arrayBuffer: async () => pngBytes.buffer,
-		}));
-		vi.stubGlobal("fetch", fetchMock);
-
-		const github: GitHubClient = {
-			getRepoTree: vi.fn(),
-			getFileContent: vi.fn(),
-			getRepoInfo: vi.fn(),
-			createIssue: vi.fn(),
-			uploadRepositoryFile: vi.fn(
-				async () =>
-					"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png",
-			),
-		};
-
-		const markdown = await prepareScreenshotMarkdown({
+	it("prepareScreenshotMarkdown embeds the original image URL", () => {
+		const markdown = prepareScreenshotMarkdown({
 			screenshot: "https://cdn.example.com/shot.png",
-			owner: "owner",
-			repo: "repo",
-			github,
 		});
 
 		expect(markdown).toBe(
-			"![Screenshot](https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/test.png)",
+			"![Screenshot](https://cdn.example.com/shot.png)",
 		);
-		expect(github.uploadRepositoryFile).toHaveBeenCalled();
-		vi.unstubAllGlobals();
 	});
 
-	it("prepareScreenshotMarkdown re-hosts data:image screenshots", async () => {
-		const github: GitHubClient = {
-			getRepoTree: vi.fn(),
-			getFileContent: vi.fn(),
-			getRepoInfo: vi.fn(),
-			createIssue: vi.fn(),
-			uploadRepositoryFile: vi.fn(
-				async () =>
-					"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/data.png",
-			),
-		};
-
-		const markdown = await prepareScreenshotMarkdown({
+	it("prepareScreenshotMarkdown embeds data:image screenshots", () => {
+		const markdown = prepareScreenshotMarkdown({
 			screenshot: "data:image/png;base64,iVBORw0KGgo=",
-			owner: "owner",
-			repo: "repo",
-			github,
 		});
 
-		expect(markdown).toContain("![Screenshot](");
-		expect(github.uploadRepositoryFile).toHaveBeenCalled();
+		expect(markdown).toBe("![Screenshot](data:image/png;base64,iVBORw0KGgo=)");
 	});
 
-	it("prepareScreenshotMarkdown fetches relative NocoBase paths with auth", async () => {
-		const pngBytes = Buffer.from(
-			"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-			"base64",
-		);
-		const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-			expect(init?.headers).toEqual({
-				Authorization: "Bearer secret-token",
-			});
-			return {
-				ok: true,
-				headers: new Headers({ "content-type": "image/png" }),
-				arrayBuffer: async () => pngBytes.buffer,
-			};
-		});
-		vi.stubGlobal("fetch", fetchMock);
-
-		const github: GitHubClient = {
-			getRepoTree: vi.fn(),
-			getFileContent: vi.fn(),
-			getRepoInfo: vi.fn(),
-			createIssue: vi.fn(),
-			uploadRepositoryFile: vi.fn(
-				async () =>
-					"https://raw.githubusercontent.com/owner/repo/main/.github/issue-screenshots/noco.png",
-			),
-		};
-
-		const markdown = await prepareScreenshotMarkdown({
-			screenshot: "https://crm.example.com/storage/uploads/shot.png",
-			owner: "owner",
-			repo: "repo",
-			github,
-			nocobaseToken: "secret-token",
+	it("prepareScreenshotMarkdown resolves relative NocoBase paths", () => {
+		const markdown = prepareScreenshotMarkdown({
+			screenshot: "/storage/uploads/shot.png",
 			nocobasePublicUrl: "https://crm.example.com",
 		});
 
-		expect(fetchMock).toHaveBeenCalledWith(
-			"https://crm.example.com/storage/uploads/shot.png",
-			expect.any(Object),
+		expect(markdown).toBe(
+			"![Screenshot](https://crm.example.com/storage/uploads/shot.png)",
 		);
-		expect(markdown).toContain("![Screenshot](");
-		vi.unstubAllGlobals();
 	});
 
-	it("prepareScreenshotMarkdown returns null when fetch fails", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => ({
-				ok: false,
-				headers: new Headers(),
-				arrayBuffer: async () => new ArrayBuffer(0),
-			})),
-		);
-
-		const github: GitHubClient = {
-			getRepoTree: vi.fn(),
-			getFileContent: vi.fn(),
-			getRepoInfo: vi.fn(),
-			createIssue: vi.fn(),
-			uploadRepositoryFile: vi.fn(),
-		};
-
-		await expect(
+	it("prepareScreenshotMarkdown returns null for invalid screenshot URLs", () => {
+		expect(
 			prepareScreenshotMarkdown({
-				screenshot: "https://cdn.example.com/shot.png",
-				owner: "owner",
-				repo: "repo",
-				github,
+				screenshot: "https://crm.atplus.cloud",
 			}),
-		).resolves.toBeNull();
-		vi.unstubAllGlobals();
+		).toBeNull();
 	});
 
 	it("normalizeScreenshotInput ignores unsupported values", () => {
@@ -237,24 +139,5 @@ describe("screenshot helpers", () => {
 			screenshot: undefined,
 			urlAtual: "https://app.example.com/login",
 		});
-	});
-
-	it("prepareScreenshotMarkdown returns null for invalid screenshot URLs", async () => {
-		const github: GitHubClient = {
-			getRepoTree: vi.fn(),
-			getFileContent: vi.fn(),
-			getRepoInfo: vi.fn(),
-			createIssue: vi.fn(),
-			uploadRepositoryFile: vi.fn(),
-		};
-
-		await expect(
-			prepareScreenshotMarkdown({
-				screenshot: "https://crm.atplus.cloud",
-				owner: "owner",
-				repo: "repo",
-				github,
-			}),
-		).resolves.toBeNull();
 	});
 });

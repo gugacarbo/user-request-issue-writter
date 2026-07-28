@@ -533,18 +533,66 @@ describe("SSE tick computations (pure)", () => {
 		const newestQueueId = summary[0]?.id ?? 0;
 
 		// First tick with lastSeen=0 → new ids present → snapshot, new cursors.
-		const tick1 = computeQueueTick({ db: testDb.db }, 0, 0);
+		const tick1 = computeQueueTick({ db: testDb.db }, 0, 0, "");
 		expect(tick1).not.toBeNull();
 		expect(tick1?.event.event).toBe("snapshot");
 		expect(tick1?.lastQueueId).toBe(newestQueueId);
 		expect(tick1?.lastRequestId).toBe(requestId);
+		expect(tick1?.lastFingerprint).not.toBe("");
 
 		// Second tick with the same cursors → nothing changed → counts + same cursors.
-		const tick2 = computeQueueTick({ db: testDb.db }, newestQueueId, requestId);
+		const tick2 = computeQueueTick(
+			{ db: testDb.db },
+			newestQueueId,
+			requestId,
+			tick1?.lastFingerprint ?? "",
+		);
 		expect(tick2).not.toBeNull();
 		expect(tick2?.event.event).toBe("counts");
 		expect(tick2?.lastQueueId).toBe(newestQueueId);
 		expect(tick2?.lastRequestId).toBe(requestId);
+		expect(tick2?.lastFingerprint).toBe(tick1?.lastFingerprint);
+	});
+
+	it("computeQueueTick sends snapshot when a row updates without new ids", () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+		const summary = listQueueSummary({ db: testDb.db }, 100);
+		const newestQueueId = summary[0]?.id ?? 0;
+		const fingerprint = summary
+			.map(
+				(r) =>
+					`${r.id}\t${r.requestId}\t${r.status}\t${r.attempts}\t${r.issueNumber ?? ""}\t${r.lastError ?? ""}`,
+			)
+			.join("\n");
+
+		setQueueStatusForRequest({ db: testDb.db }, requestId, "processing");
+
+		const tick = computeQueueTick(
+			{ db: testDb.db },
+			newestQueueId,
+			requestId,
+			fingerprint,
+		);
+		expect(tick).not.toBeNull();
+		expect(tick?.event.event).toBe("snapshot");
+		expect(tick?.lastQueueId).toBe(newestQueueId);
+		expect(tick?.lastRequestId).toBe(requestId);
+		expect(tick?.lastFingerprint).not.toBe(fingerprint);
+		const snapshot = tick?.event.data as {
+			queue: { status: string }[];
+		};
+		expect(snapshot.queue[0]?.status).toBe("processing");
 	});
 
 	it("computeLlmLogsTick returns null when no new logs, event otherwise", () => {
