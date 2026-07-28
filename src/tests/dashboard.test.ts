@@ -17,6 +17,7 @@ import type { EnqueueResult } from "../queue/queue";
 import {
 	appendLlmLog,
 	enqueueRequest,
+	manualRetryRequest,
 	setQueueStatusForRequest,
 } from "../queue/queue";
 import { computeLlmLogsTick, computeQueueTick } from "../web/dashboard";
@@ -224,6 +225,51 @@ describe("dashboardApi (read-only queries)", () => {
 		// Unknown id → null.
 		expect(getRequestRun({ db: testDb.db }, 9999999)).toBeNull();
 	});
+
+	it("manualRetryRequest re-enqueues failed requests and resets queue attempts", () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+		setQueueStatusForRequest({ db: testDb.db }, requestId, "failed");
+
+		const result = manualRetryRequest({ db: testDb.db }, requestId);
+		expect(result).toEqual({ kind: "retried", requestId });
+
+		const run = getRequestRun({ db: testDb.db }, requestId);
+		expect(run?.request.status).toBe("pending");
+		expect(run?.request.lastError).toBeNull();
+		expect(run?.queue?.status).toBe("pending");
+		expect(run?.queue?.attempts).toBe(0);
+	});
+
+	it("manualRetryRequest rejects non-failed requests", () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+
+		expect(manualRetryRequest({ db: testDb.db }, requestId)).toEqual({
+			kind: "not_retryable",
+			status: "pending",
+		});
+	});
 });
 
 describe("dashboard plugin (JSON + static)", () => {
@@ -396,6 +442,66 @@ describe("dashboard plugin (JSON + static)", () => {
 			url: "/app/api/requests/abc",
 		});
 		expect(res.statusCode).toBe(400);
+	});
+
+	it("POST /app/api/requests/:id/retry re-enqueues a failed request", async () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+		setQueueStatusForRequest({ db: testDb.db }, requestId, "failed");
+
+		const res = await server.inject({
+			method: "POST",
+			url: `/app/api/requests/${requestId}/retry`,
+		});
+		expect(res.statusCode).toBe(200);
+		const json = res.json() as {
+			retried: boolean;
+			run: { request: { status: string }; queue: { status: string; attempts: number } | null };
+		};
+		expect(json.retried).toBe(true);
+		expect(json.run.request.status).toBe("pending");
+		expect(json.run.queue?.status).toBe("pending");
+		expect(json.run.queue?.attempts).toBe(0);
+	});
+
+	it("POST /app/api/requests/:id/retry returns 409 when not failed", async () => {
+		const enq = enqueueRequest(
+			{ db: testDb.db },
+			{
+				bodyHash: hash(ticketPayload("a/b")),
+				owner: "a",
+				repo: "a/b",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				payload: ticketPayload("a/b"),
+			},
+		);
+		const requestId = assertInserted(enq);
+
+		const res = await server.inject({
+			method: "POST",
+			url: `/app/api/requests/${requestId}/retry`,
+		});
+		expect(res.statusCode).toBe(409);
+		expect((res.json() as { error: string }).error).toBe("not retryable");
+	});
+
+	it("POST /app/api/requests/:id/retry returns 404 for unknown id", async () => {
+		const res = await server.inject({
+			method: "POST",
+			url: "/app/api/requests/9999999/retry",
+		});
+		expect(res.statusCode).toBe(404);
 	});
 });
 

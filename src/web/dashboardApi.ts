@@ -5,10 +5,9 @@ import { llmLogs, queue as queueTable, requests } from "../db/schema";
 /**
  * Read-only queries backing the observability dashboard (ADR-0009).
  *
- * The dashboard polls these via the SSE endpoints in `server.ts`. All
- * functions are pure SELECTs on the SQLite store — they neve mutate state.
- * The sources of mutation remain the webhook (enqueue) and the worker
- * (claim/finalize/log).
+ * The dashboard polls these via the SSE endpoints in `server.ts`. Most
+ * functions are pure SELECTs on the SQLite store; manual retry is the
+ * exception and re-enqueues failed requests via `manualRetryRequest`.
  */
 export type DashboardDeps = { readonly db: DB };
 

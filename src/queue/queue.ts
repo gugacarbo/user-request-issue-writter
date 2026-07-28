@@ -224,6 +224,54 @@ export function requeueForRetry(deps: QueueDeps, input: RequeueInput): void {
 	});
 }
 
+/**
+ * Manually re-enqueue a failed request for immediate worker pickup (dashboard).
+ * Resets `queue.attempts` so automatic retry limits do not block the new run.
+ */
+export type ManualRetryResult =
+	| { kind: "retried"; requestId: number }
+	| { kind: "not_found" }
+	| { kind: "not_retryable"; status: string };
+
+export function manualRetryRequest(
+	deps: QueueDeps,
+	requestId: number,
+): ManualRetryResult {
+	const request = getRequest(deps, requestId);
+	if (!request) return { kind: "not_found" };
+	if (request.status !== "failed") {
+		return { kind: "not_retryable", status: request.status };
+	}
+
+	const queueRow = getQueueByRequest(deps, requestId);
+	if (!queueRow) return { kind: "not_found" };
+
+	const now = Math.floor(Date.now() / 1000);
+	deps.db.transaction((tx) => {
+		tx.update(queueTable)
+			.set({
+				status: "pending",
+				attempts: 0,
+				lastError: null,
+				nextRunAt: now,
+				updatedAt: now,
+			})
+			.where(eq(queueTable.id, queueRow.id))
+			.run();
+
+		tx.update(requests)
+			.set({
+				status: "pending",
+				lastError: null,
+				updatedAt: now,
+			})
+			.where(eq(requests.id, requestId))
+			.run();
+	});
+
+	return { kind: "retried", requestId };
+}
+
 /** Mark a processed item as done/failed in BOTH queue and requests (txn). */
 export function finalizeProcessing(
 	deps: QueueDeps,

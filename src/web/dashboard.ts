@@ -4,6 +4,7 @@ import ssePlugin from "@fastify/sse";
 import { fastifyStatic } from "@fastify/static";
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import type { DB } from "../db";
+import { manualRetryRequest } from "../queue/queue";
 import {
 	countByStatus,
 	type DashboardDeps,
@@ -19,7 +20,8 @@ import {
  * the built React app as static assets in production.
  *
  * Registered as a plugin so `server.ts` stays focused on the webhook. The
- * dashboard is read-only — it never mutates `requests`/`queue`/`llm_logs`.
+ * dashboard is read-only except for the manual retry endpoint — it never
+ * mutates `requests`/`queue`/`llm_logs` otherwise.
  */
 export type DashboardPluginDeps = {
 	readonly db: DB;
@@ -91,6 +93,28 @@ const dashboardPlugin: FastifyPluginAsync<DashboardPluginDeps> = async (
 			return reply.code(404).send({ error: "not found" });
 		}
 		return run;
+	});
+
+	server.post("/app/api/requests/:id/retry", async (request, reply) => {
+		const id = Number.parseInt(
+			(request.params as { id?: string }).id ?? "",
+			10,
+		);
+		if (Number.isNaN(id)) {
+			return reply.code(400).send({ error: "invalid id" });
+		}
+		const result = manualRetryRequest(dashboardDeps, id);
+		if (result.kind === "not_found") {
+			return reply.code(404).send({ error: "not found" });
+		}
+		if (result.kind === "not_retryable") {
+			return reply.code(409).send({
+				error: "not retryable",
+				status: result.status,
+			});
+		}
+		const run = getRequestRun(dashboardDeps, id);
+		return { retried: true, run };
 	});
 
 	// --- SSE: /app/events/queue -------------------------------------------

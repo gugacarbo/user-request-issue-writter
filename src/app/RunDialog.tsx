@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
@@ -31,16 +32,21 @@ export function RunDialog({
 	const [run, setRun] = useState<RunDetail | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [tab, setTab] = useState<"summary" | "logs">("summary");
+	const [retrying, setRetrying] = useState(false);
+	const [retryError, setRetryError] = useState<string | null>(null);
+
+	const loadRun = useCallback(async () => {
+		const res = await fetch(`/app/api/requests/${requestId}`);
+		if (!res.ok) throw new Error(`HTTP ${res.status}`);
+		return (await res.json()) as RunDetail;
+	}, [requestId]);
 
 	useEffect(() => {
 		let alive = true;
 		setRun(null);
 		setError(null);
-		fetch(`/app/api/requests/${requestId}`)
-			.then(async (res) => {
-				if (!res.ok) throw new Error(`HTTP ${res.status}`);
-				return (await res.json()) as RunDetail;
-			})
+		setRetryError(null);
+		loadRun()
 			.then((data) => {
 				if (alive) setRun(data);
 			})
@@ -50,7 +56,30 @@ export function RunDialog({
 		return () => {
 			alive = false;
 		};
-	}, [requestId]);
+	}, [loadRun]);
+
+	const handleRetry = async () => {
+		setRetrying(true);
+		setRetryError(null);
+		try {
+			const res = await fetch(`/app/api/requests/${requestId}/retry`, {
+				method: "POST",
+			});
+			if (!res.ok) {
+				const body = (await res.json().catch(() => null)) as {
+					error?: string;
+				} | null;
+				throw new Error(body?.error ?? `HTTP ${res.status}`);
+			}
+			const data = (await res.json()) as { run?: RunDetail };
+			if (data.run) setRun(data.run);
+			else setRun(await loadRun());
+		} catch (e: unknown) {
+			setRetryError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setRetrying(false);
+		}
+	};
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -83,7 +112,12 @@ export function RunDialog({
 						) : !run ? (
 							<p className="text-sm text-muted-foreground">Carregando…</p>
 						) : (
-							<RunSummary run={run} />
+							<RunSummary
+								run={run}
+								retrying={retrying}
+								retryError={retryError}
+								onRetry={handleRetry}
+							/>
 						)}
 					</TabsContent>
 
@@ -119,10 +153,41 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 	);
 }
 
-function RunSummary({ run }: { run: RunDetail }) {
+function RunSummary({
+	run,
+	retrying,
+	retryError,
+	onRetry,
+}: {
+	run: RunDetail;
+	retrying: boolean;
+	retryError: string | null;
+	onRetry: () => void;
+}) {
 	const { request, queue } = run;
+	const canRetry = request.status === "failed";
 	return (
-		<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+		<div className="flex flex-col gap-4">
+			{canRetry ? (
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-sm text-muted-foreground">
+						Esta execução falhou. Você pode disparar uma nova tentativa manual.
+					</p>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						disabled={retrying}
+						onClick={onRetry}
+					>
+						{retrying ? "Reenfileirando…" : "Tentar novamente"}
+					</Button>
+				</div>
+			) : null}
+			{retryError ? (
+				<p className="text-sm text-destructive">Erro ao reenfileirar: {retryError}</p>
+			) : null}
+			<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
 			<Row label="Status">
 				<StatusBadge status={request.status} />
 			</Row>
@@ -160,6 +225,7 @@ function RunSummary({ run }: { run: RunDetail }) {
 					"—"
 				)}
 			</Row>
+			</div>
 		</div>
 	);
 }
