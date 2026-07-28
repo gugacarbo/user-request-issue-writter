@@ -26,6 +26,7 @@ async function main(): Promise<void> {
 		webhookSecret: env.WEBHOOK_SECRET,
 		nocobaseToken: env.NOCOBASE_TOKEN,
 		nocobasePublicUrl: env.NOCOBASE_PUBLIC_URL,
+		agentTimeoutMs: env.AGENT_TIMEOUT_MS,
 		db,
 		logger: { level: env.LOG_LEVEL },
 		// Serve the built SPA (dist/app) and stream queue/logs over SSE when
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
 		nocobaseToken: env.NOCOBASE_TOKEN,
 		nocobasePublicUrl: env.NOCOBASE_PUBLIC_URL,
 		maxAttempts: env.WORKER_MAX_ATTEMPTS,
+		agentTimeoutMs: env.AGENT_TIMEOUT_MS,
 		log: (level, msg, data) => server.log[level]({ data }, msg),
 	});
 

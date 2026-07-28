@@ -76,6 +76,18 @@ describe("env", () => {
 		expect(env.WORKER_MAX_ATTEMPTS).toBe(7);
 	});
 
+	it("applies AGENT_TIMEOUT_MS default when omitted", async () => {
+		delete process.env.AGENT_TIMEOUT_MS;
+		const { env } = await import("../config/env");
+		expect(env.AGENT_TIMEOUT_MS).toBe(600_000);
+	});
+
+	it("loads AGENT_TIMEOUT_MS from env", async () => {
+		process.env.AGENT_TIMEOUT_MS = "120000";
+		const { env } = await import("../config/env");
+		expect(env.AGENT_TIMEOUT_MS).toBe(120_000);
+	});
+
 	it("throws when WEBHOOK_SECRET is missing", async () => {
 		delete process.env.WEBHOOK_SECRET;
 		await expect(import("../config/env")).rejects.toThrow(/WEBHOOK_SECRET/i);

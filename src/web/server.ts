@@ -34,6 +34,8 @@ export type ServerDeps = {
 	 */
 	readonly db: DB;
 	readonly logger?: false | { readonly level: string };
+	/** Wall-clock cap for dryRun agent runs (ms). */
+	readonly agentTimeoutMs?: number;
 	/**
 	 * Dashboard options (ADR-0009). When omitted, the dashboard plugin is
 	 * NOT registered (webhook-only server, useful for some unit tests). The
@@ -125,13 +127,26 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 		// side effects on the queue.
 		if (dryRun) {
 			try {
-				const proposal = await generateIssue(deps.llm, deps.github, input, {
+				const result = await generateIssue(deps.llm, deps.github, input, {
+					timeoutMs: deps.agentTimeoutMs,
 					onDebug: (msg, data) => {
 						if (data) server.log.debug(data, msg);
 						else server.log.debug(msg);
 					},
 				});
-				if (!proposal) {
+				if (result.outcome === "agent_error") {
+					return reply.code(200).send({
+						dryRun: true,
+						delivery,
+						bodyHash,
+						result: null,
+						agentError: {
+							message: result.message,
+							code: result.code ?? null,
+						},
+					});
+				}
+				if (result.outcome !== "issue") {
 					return reply.code(200).send({
 						dryRun: true,
 						delivery,
@@ -139,6 +154,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 						result: null,
 					});
 				}
+				const proposal = result.proposal;
 				const screenshotMarkdown = prepareScreenshotMarkdown({
 					screenshot: ctx.screenshot,
 					nocobasePublicUrl: deps.nocobasePublicUrl,

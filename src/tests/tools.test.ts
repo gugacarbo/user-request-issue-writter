@@ -28,6 +28,7 @@ describe("tools", () => {
 			"read_file",
 			"get_repo_info",
 			"submit_issue",
+			"report_error",
 		]);
 		expect(toolSchemas[0].function.parameters.type).toBe("object");
 	});
@@ -93,7 +94,28 @@ describe("tools", () => {
 			"repo",
 		);
 		expect(gh.createIssue).not.toHaveBeenCalled();
-		expect(result).toEqual({ isTerminal: true, issue: proposal });
+		expect(result).toEqual({
+			isTerminal: true,
+			kind: "submit_issue",
+			issue: proposal,
+		});
+	});
+
+	it("report_error is terminal and returns structured error", async () => {
+		const gh = mockGitHub();
+		const { dispatchTool } = await import("../llm/tools");
+		const result = await dispatchTool(
+			"report_error",
+			{ message: "Cannot access repo", code: "repo_not_found" },
+			gh,
+			"owner",
+			"repo",
+		);
+		expect(result).toEqual({
+			isTerminal: true,
+			kind: "report_error",
+			error: { message: "Cannot access repo", code: "repo_not_found" },
+		});
 	});
 
 	it("dispatchTool throws on unknown tool name", async () => {
@@ -164,6 +186,7 @@ describe("tools", () => {
 		);
 		expect(result).toEqual({
 			isTerminal: true,
+			kind: "submit_issue",
 			issue: { title: "Bug", body: "desc", labels: undefined },
 		});
 	});
@@ -180,6 +203,7 @@ describe("tools", () => {
 		);
 		expect(result).toEqual({
 			isTerminal: true,
+			kind: "submit_issue",
 			issue: { title: "Bug", body: "desc", labels: undefined },
 		});
 	});

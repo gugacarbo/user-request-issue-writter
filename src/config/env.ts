@@ -21,6 +21,8 @@ export const env = createEnv({
 		LOG_LEVEL: z.string().default("info"),
 		/** Max automatic worker attempts before marking a request failed (ADR-0008). */
 		WORKER_MAX_ATTEMPTS: z.coerce.number().int().min(1).default(5),
+		/** Wall-clock cap for one agent run, in milliseconds (default 10 minutes). */
+		AGENT_TIMEOUT_MS: z.coerce.number().int().min(1).default(600_000),
 		NOCOBASE_TOKEN: z.string().min(1).optional(),
 		NOCOBASE_PUBLIC_URL: z.url().optional(),
 	},

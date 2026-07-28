@@ -7,9 +7,23 @@ export type IssueProposal = {
 	readonly labels?: string[];
 };
 
-type ToolDispatcherResult =
+export type AgentErrorReport = {
+	readonly message: string;
+	readonly code?: string;
+};
+
+export type ToolDispatcherResult =
 	| { readonly isTerminal: false; readonly content: string }
-	| { readonly isTerminal: true; readonly issue: IssueProposal };
+	| {
+			readonly isTerminal: true;
+			readonly kind: "submit_issue";
+			readonly issue: IssueProposal;
+	  }
+	| {
+			readonly isTerminal: true;
+			readonly kind: "report_error";
+			readonly error: AgentErrorReport;
+	  };
 
 type JsonSchemaProperty = {
 	readonly type: string;
@@ -78,7 +92,7 @@ export const toolSchemas: FunctionSchema[] = [
 		type: "function",
 		function: {
 			name: "submit_issue",
-			description: `Submit the drafted issue. Terminal tool: stops the analysis loop. Does not create the issue directly; the host creates it. ${agentIssueBodyInstructions()}`,
+			description: `Submit the drafted issue and finish successfully. Terminal tool: stops the agent after submission. Does not create the issue directly; the host creates it. ${agentIssueBodyInstructions()}`,
 			parameters: {
 				type: "object",
 				properties: {
@@ -95,6 +109,30 @@ export const toolSchemas: FunctionSchema[] = [
 					},
 				},
 				required: ["title", "body"],
+			},
+		},
+	},
+	{
+		type: "function",
+		function: {
+			name: "report_error",
+			description:
+				"Report that the issue cannot be drafted and stop the agent. Terminal tool: use when the repository is inaccessible, the ticket lacks enough information, or repeated tool failures cannot be resolved.",
+			parameters: {
+				type: "object",
+				properties: {
+					message: {
+						type: "string",
+						description:
+							"Human-readable explanation of why the agent could not complete the task.",
+					},
+					code: {
+						type: "string",
+						description:
+							"Optional short machine-readable code (e.g. repo_not_found, insufficient_context).",
+					},
+				},
+				required: ["message"],
 			},
 		},
 	},
@@ -136,7 +174,19 @@ export async function dispatchTool(
 					? (args.labels as string[])
 					: undefined,
 			};
-			return { isTerminal: true, issue };
+			return { isTerminal: true, kind: "submit_issue", issue };
+		}
+		case "report_error": {
+			const message = String(args.message ?? "").trim();
+			const code =
+				typeof args.code === "string" && args.code.trim()
+					? args.code.trim()
+					: undefined;
+			return {
+				isTerminal: true,
+				kind: "report_error",
+				error: { message: message || "Agent reported an error.", code },
+			};
 		}
 		default:
 			throw new Error(`unknown tool: ${name}`);

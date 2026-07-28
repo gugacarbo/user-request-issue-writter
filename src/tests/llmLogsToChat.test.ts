@@ -207,7 +207,8 @@ describe("llmLogsToUIMessages submit_issue", () => {
 		];
 
 		const messages = llmLogsToUIMessages(logs);
-		const part = messages[0]?.parts?.[2] as {
+		const assistant = messages.find((m) => m.id === "assistant-1");
+		const part = assistant?.parts?.[1] as {
 			state?: string;
 			output?: { text?: string };
 		};

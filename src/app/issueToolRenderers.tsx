@@ -177,3 +177,24 @@ export function GetRepoInfoToolPart({ part }: { part: ToolPart }) {
 		</ToolRow>
 	);
 }
+
+export function ReportErrorToolPart({ part }: { part: ToolPart }) {
+	const pending = isPending(part.state);
+	const record = outputRecord(part.output) ?? outputRecord(part.input);
+	const message =
+		typeof record?.message === "string"
+			? record.message
+			: outputText(part.output) || "Erro reportado";
+	const code = typeof record?.code === "string" ? record.code : undefined;
+
+	return (
+		<ToolRow
+			title={pending ? "Reportando erro…" : "Agente encerrou com erro"}
+			subtitle={code}
+			pending={pending}
+			defaultOpen
+		>
+			<p className="text-sm text-destructive whitespace-pre-wrap">{message}</p>
+		</ToolRow>
+	);
+}

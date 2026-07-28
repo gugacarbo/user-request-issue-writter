@@ -1,6 +1,10 @@
 import type { GitHubClient } from "../github/github";
 import { agentIssueBodyInstructions } from "../issue/template";
-import { dispatchTool, type IssueProposal, toolSchemas } from "./tools";
+import {
+	dispatchTool,
+	type IssueProposal,
+	toolSchemas,
+} from "./tools";
 
 export type ToolCall = {
 	readonly name: string;
@@ -61,9 +65,20 @@ export type GenerateIssueInput = {
 	readonly context?: IssueContext;
 };
 
+export type GenerateIssueResult =
+	| { readonly outcome: "issue"; readonly proposal: IssueProposal }
+	| {
+			readonly outcome: "agent_error";
+			readonly message: string;
+			readonly code?: string;
+	  }
+	| { readonly outcome: "incomplete" };
+
 export type GenerateIssueOptions = {
 	readonly maxIterations?: number;
 	readonly onDebug?: DebugLog;
+	/** Wall-clock cap for the whole agent loop (ms). */
+	readonly timeoutMs?: number;
 };
 
 type DebugLog = (message: string, data?: Record<string, unknown>) => void;
@@ -73,7 +88,9 @@ const DEFAULT_MAX_ITERATIONS = 200;
 const SYSTEM_PROMPT = [
 	"You are a software engineer that analyzes a repository via tools and drafts a GitHub issue from a user-submitted ticket.",
 	"Use the tools to understand the repository context before submitting.",
-	"Always call submit_issue exactly once when ready to finalize the issue.",
+	"When a tool returns an error, read the message, adjust your arguments, and retry.",
+	"Call submit_issue exactly once when ready to finalize the issue successfully.",
+	"Call report_error when you cannot complete the task; it stops the agent immediately.",
 	agentIssueBodyInstructions(),
 ].join(" ");
 
@@ -99,9 +116,18 @@ function buildUserMessage(input: GenerateIssueInput): string {
 		"",
 		"Draft a well-structured GitHub issue based on this ticket.",
 		agentIssueBodyInstructions(),
-		"Call submit_issue with the title, body (Markdown), and optional labels.",
+		"Call submit_issue with the title, body (Markdown), and optional labels when done.",
+		"Call report_error if you cannot complete the task.",
 	);
 	return lines.join("\n");
+}
+
+function formatToolError(error: unknown): string {
+	const message = error instanceof Error ? error.message : String(error);
+	return [
+		`Tool execution failed: ${message}`,
+		"Fix the arguments and retry, or call report_error if the task cannot be completed.",
+	].join("\n");
 }
 
 export async function generateIssue(
@@ -109,9 +135,10 @@ export async function generateIssue(
 	github: GitHubClient,
 	input: GenerateIssueInput,
 	options: GenerateIssueOptions = {},
-): Promise<IssueProposal | null> {
+): Promise<GenerateIssueResult> {
 	const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 	const debug = options.onDebug;
+	const startedAt = Date.now();
 	const messages: ChatMessage[] = [
 		{ role: "system", content: SYSTEM_PROMPT },
 		{ role: "user", content: buildUserMessage(input) },
@@ -124,6 +151,15 @@ export async function generateIssue(
 	});
 
 	for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+		if (isTimedOut(startedAt, options.timeoutMs)) {
+			debug?.("agent timeout", {
+				iteration,
+				timeoutMs: options.timeoutMs,
+				elapsedMs: Date.now() - startedAt,
+			});
+			return { outcome: "incomplete" };
+		}
+
 		const response = await llm.chat({
 			messages,
 			tools: toolSchemas,
@@ -140,7 +176,7 @@ export async function generateIssue(
 
 		if (toolCalls.length === 0) {
 			debug?.("no tool calls, ending loop", { iteration });
-			return null;
+			return { outcome: "incomplete" };
 		}
 
 		messages.push({
@@ -158,42 +194,73 @@ export async function generateIssue(
 				arguments: call.arguments,
 			});
 
-			const result = await dispatchTool(
-				call.name,
-				call.arguments,
-				github,
-				input.owner,
-				input.repo,
-			);
+			let toolContent: string;
+			try {
+				const result = await dispatchTool(
+					call.name,
+					call.arguments,
+					github,
+					input.owner,
+					input.repo,
+				);
 
-			if (result.isTerminal) {
-				debug?.("submit_issue called", {
+				if (result.isTerminal) {
+					if (result.kind === "submit_issue") {
+						debug?.("submit_issue called", {
+							iteration,
+							toolIndex,
+							title: result.issue.title,
+							body: result.issue.body,
+							labels: result.issue.labels,
+						});
+						return { outcome: "issue", proposal: result.issue };
+					}
+
+					debug?.("report_error called", {
+						iteration,
+						toolIndex,
+						message: result.error.message,
+						code: result.error.code ?? null,
+					});
+					return {
+						outcome: "agent_error",
+						message: result.error.message,
+						code: result.error.code,
+					};
+				}
+
+				toolContent = result.content;
+				debug?.("tool result", {
 					iteration,
 					toolIndex,
-					title: result.issue.title,
-					body: result.issue.body,
-					labels: result.issue.labels,
+					tool: call.name,
+					result: toolContent,
 				});
-				return result.issue;
+			} catch (error) {
+				toolContent = formatToolError(error);
+				debug?.("tool error", {
+					iteration,
+					toolIndex,
+					tool: call.name,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
-
-			debug?.("tool result", {
-				iteration,
-				toolIndex,
-				tool: call.name,
-				result: result.content,
-			});
 
 			messages.push({
 				role: "tool",
-				content: result.content,
+				content: toolContent,
 				tool_call_id: callNameId(call.name, iteration, toolIndex),
 			});
 		}
 	}
 
 	debug?.("max iterations reached", { maxIterations });
-	return null;
+	return { outcome: "incomplete" };
+}
+
+function isTimedOut(startedAt: number, timeoutMs?: number): boolean {
+	if (!timeoutMs || timeoutMs <= 0) return false;
+	return Date.now() - startedAt >= timeoutMs;
 }
 
 function callNameId(

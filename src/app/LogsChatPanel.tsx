@@ -5,6 +5,7 @@ import {
 	GetRepoInfoToolPart,
 	ListFilesToolPart,
 	ReadFileToolPart,
+	ReportErrorToolPart,
 } from "./issueToolRenderers";
 import { llmLogsToUIMessages } from "./llmLogsToChat";
 import type { LlmLogRow } from "./types";
@@ -73,6 +74,9 @@ function LogsToolRenderer(props: ComponentProps<typeof DefaultToolRenderer>) {
 	}
 	if (partType === "tool-get_repo_info") {
 		return <GetRepoInfoToolPart part={props.part} />;
+	}
+	if (partType === "tool-report_error") {
+		return <ReportErrorToolPart part={props.part} />;
 	}
 	return <DefaultToolRenderer {...props} />;
 }

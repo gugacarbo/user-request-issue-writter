@@ -134,6 +134,9 @@ function markerText(
 	const labels: Record<string, string> = {
 		"no tool calls, ending loop": "Agente encerrou sem chamar ferramentas",
 		"max iterations reached": "Limite de iterações atingido",
+		"agent timeout": "Tempo máximo do agente excedido",
+		"tool error": "Erro na tool",
+		"report_error called": "Agente reportou erro",
 	};
 	const label = labels[event] ?? event;
 	const detail = summarizeMarkerData(data);
@@ -318,6 +321,66 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 				break;
 			}
 
+			case "report_error called": {
+				const message =
+					typeof log.data?.message === "string"
+						? log.data.message
+						: "Erro reportado pelo agente";
+				const code =
+					typeof log.data?.code === "string" ? log.data.code : undefined;
+				const id = resolveToolCallId(log, "report_error", tools);
+				const part = tools.get(id);
+				const output = { message, code, text: message };
+				if (part) {
+					part.input = { message, ...(code ? { code } : {}) };
+					part.output = output;
+					part.state = "output-available";
+				} else {
+					const created: ToolPart = {
+						type: "tool-report_error",
+						toolCallId: id,
+						state: "output-available",
+						input: { message, ...(code ? { code } : {}) },
+						output,
+					};
+					tools.set(id, created);
+					messages.push(
+						uiMessage(`report-error-${log.id}`, "assistant", [created]),
+					);
+				}
+				break;
+			}
+
+			case "tool error": {
+				const toolName = log.toolName ?? String(log.data?.tool ?? "");
+				if (!toolName) break;
+				const id = resolveToolCallId(log, toolName, tools);
+				const error =
+					typeof log.data?.error === "string"
+						? log.data.error
+						: "Falha ao executar tool";
+				const part = tools.get(id);
+				const output = { error, text: error };
+				if (part) {
+					part.output = output;
+					part.state = "output-error";
+				} else {
+					messages.push(
+						uiMessage(`tool-error-${log.id}`, "assistant", [
+							{
+								type: toolPartType(toolName),
+								toolCallId: id,
+								state: "output-error",
+								input: {},
+								output,
+							},
+						]),
+					);
+				}
+				break;
+			}
+
+			case "agent timeout":
 			case "no tool calls, ending loop":
 			case "max iterations reached":
 				messages.push(

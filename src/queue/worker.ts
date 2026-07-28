@@ -27,6 +27,8 @@ export type WorkerDeps = {
 	readonly pollIntervalMs?: number;
 	/** Hard cap on attempts before giving up (default 5). */
 	readonly maxAttempts?: number;
+	/** Wall-clock cap for a single agent run (ms). */
+	readonly agentTimeoutMs?: number;
 	/**
 	 * Seconds to wait before the next pickup after a retryable failure.
 	 * Receives the current `queue.attempts` (post-claim). Defaults to
@@ -147,10 +149,9 @@ async function processOne(
 		context: ticketContextFromTicket(ticket),
 	};
 	try {
-		const proposal = await generateIssue(deps.llm, deps.github, input, {
+		const result = await generateIssue(deps.llm, deps.github, input, {
+			timeoutMs: deps.agentTimeoutMs,
 			onDebug: (message, data) => {
-				// `iteration` is published inside `data` by the tool loop for
-				// events that carry it (see llm.ts onDebug calls).
 				appendLlmLog(queueDeps, {
 					requestId,
 					iteration:
@@ -163,7 +164,25 @@ async function processOne(
 				});
 			},
 		});
-		if (!proposal) {
+
+		if (result.outcome === "agent_error") {
+			finalizeProcessing(queueDeps, {
+				queueId,
+				requestId,
+				status: "failed",
+				lastError: result.code
+					? `${result.code}: ${result.message}`
+					: result.message,
+			});
+			log("info", "worker agent reported error", {
+				requestId,
+				message: result.message,
+				code: result.code,
+			});
+			return;
+		}
+
+		if (result.outcome !== "issue") {
 			handleRetryableFailure(queueDeps, {
 				queueId,
 				requestId,
@@ -175,6 +194,8 @@ async function processOne(
 			});
 			return;
 		}
+
+		const proposal = result.proposal;
 
 		const screenshotMarkdown = prepareScreenshotMarkdown({
 			screenshot: ticket.screenshot,

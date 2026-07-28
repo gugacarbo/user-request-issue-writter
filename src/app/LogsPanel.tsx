@@ -13,7 +13,10 @@ const EVENT_LABELS: Record<string, string> = {
 	"llm response": "resposta LLM",
 	"tool dispatched": "tool chamada",
 	"tool result": "resultado tool",
+	"tool error": "erro na tool",
 	"submit_issue called": "issue enviada",
+	"report_error called": "erro reportado",
+	"agent timeout": "timeout do agente",
 	"no tool calls, ending loop": "sem tools",
 	"max iterations reached": "limite de iterações",
 };

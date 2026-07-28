@@ -31,6 +31,7 @@ Copie `.env.example` para `.env` e preencha:
 | `LLM_MODEL`      | sim         | —               | Ex.: `gpt-4o-mini`                                                                                                  |
 | `LOG_LEVEL`      | não         | `info`          | Nível do pino                                                                                                       |
 | `WORKER_MAX_ATTEMPTS` | não    | `5`             | Tentativas automáticas do worker antes de marcar a solicitação como `failed`                                         |
+| `AGENT_TIMEOUT_MS` | não    | `600000`        | Tempo máximo (ms) de uma execução do agente LLM antes de encerrar com retry                                          |
 | `NOCOBASE_TOKEN` | não         | —               | Token para buscar anexos de screenshot no NocoBase (URLs em `crm.atplus.cloud`)                                     |
 | `NOCOBASE_PUBLIC_URL` | não    | —               | Origem pública do NocoBase (ex.: `https://crm.atplus.cloud`) para resolver paths relativos de anexo                 |
 | `DATABASE_PATH`  | não         | `./data/app.db` | Caminho do SQLite (ou `:memory:`). Veja [ADR-0007](docs/adr/0007-sqlite-via-drizzle-orm-migrations-by-orm-only.md). |

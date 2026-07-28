@@ -49,18 +49,21 @@ describe("llm.generateIssue", () => {
 			],
 		]);
 		const { generateIssue } = await import("../llm/llm");
-		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT);
-		expect(proposal?.title).toBe("Bug");
-		expect(proposal?.labels).toEqual(["bug"]);
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT);
+		expect(result.outcome).toBe("issue");
+		if (result.outcome === "issue") {
+			expect(result.proposal.title).toBe("Bug");
+			expect(result.proposal.labels).toEqual(["bug"]);
+		}
 	});
 
-	it("returns null when the model never calls submit_issue", async () => {
+	it("returns incomplete when the model never calls submit_issue", async () => {
 		const llm = scriptLlm([[{ name: "list_files", arguments: {} }]]);
 		const { generateIssue } = await import("../llm/llm");
-		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 2,
 		});
-		expect(proposal).toBeNull();
+		expect(result).toEqual({ outcome: "incomplete" });
 	});
 
 	it("stops at the iteration cap without throwing", async () => {
@@ -71,11 +74,84 @@ describe("llm.generateIssue", () => {
 			})),
 		};
 		const { generateIssue } = await import("../llm/llm");
-		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 3,
 		});
-		expect(proposal).toBeNull();
+		expect(result).toEqual({ outcome: "incomplete" });
 		expect(llm.chat).toHaveBeenCalledTimes(3);
+	});
+
+	it("returns agent_error when report_error is called", async () => {
+		const llm = scriptLlm([
+			[
+				{
+					name: "report_error",
+					arguments: {
+						message: "Repository not accessible",
+						code: "repo_not_found",
+					},
+				},
+			],
+		]);
+		const { generateIssue } = await import("../llm/llm");
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT);
+		expect(result).toEqual({
+			outcome: "agent_error",
+			message: "Repository not accessible",
+			code: "repo_not_found",
+		});
+	});
+
+	it("feeds tool failures back to the model and allows recovery", async () => {
+		const gh = mockGitHub();
+		(gh.getFileContent as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error("404 Not Found"),
+		);
+		const llm = scriptLlm([
+			[{ name: "read_file", arguments: { path: "missing.ts" } }],
+			[
+				{
+					name: "submit_issue",
+					arguments: { title: "Bug", body: "desc" },
+				},
+			],
+		]);
+		const onDebug = vi.fn();
+		const { generateIssue } = await import("../llm/llm");
+		const result = await generateIssue(llm, gh, BASE_INPUT, { onDebug });
+		expect(result.outcome).toBe("issue");
+		expect(onDebug).toHaveBeenCalledWith(
+			"tool error",
+			expect.objectContaining({ tool: "read_file", error: "404 Not Found" }),
+		);
+		const firstChat = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[1]?.[0];
+		const toolMessages = (firstChat?.messages ?? []).filter(
+			(m: { role?: string }) => m.role === "tool",
+		);
+		expect(JSON.stringify(toolMessages)).toContain("404 Not Found");
+	});
+
+	it("returns incomplete when the agent timeout elapses", async () => {
+		const llm: LlmClient = {
+			chat: vi.fn(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 30));
+				return {
+					toolCalls: [{ name: "list_files", arguments: {} }],
+					content: null,
+				};
+			}),
+		};
+		const onDebug = vi.fn();
+		const { generateIssue } = await import("../llm/llm");
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
+			timeoutMs: 5,
+			onDebug,
+		});
+		expect(result).toEqual({ outcome: "incomplete" });
+		expect(onDebug).toHaveBeenCalledWith(
+			"agent timeout",
+			expect.objectContaining({ timeoutMs: 5 }),
+		);
 	});
 
 	it("throws when LLM client errors", async () => {
@@ -196,10 +272,10 @@ describe("llm.generateIssue", () => {
 			})),
 		};
 		const { generateIssue } = await import("../llm/llm");
-		const proposal = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
+		const result = await generateIssue(llm, mockGitHub(), BASE_INPUT, {
 			maxIterations: 1,
 		});
-		expect(proposal).toBeNull();
+		expect(result).toEqual({ outcome: "incomplete" });
 	});
 
 	it("calls onDebug with full tool result content", async () => {
