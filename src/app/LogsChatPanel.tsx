@@ -1,6 +1,5 @@
 import { MessageList } from "@agent-elements/message-list";
 import { ToolRenderer as DefaultToolRenderer } from "@agent-elements/tools/tool-renderer";
-import type { CustomToolRendererProps } from "@agent-elements/types";
 import { type ComponentProps, useMemo } from "react";
 import { llmLogsToUIMessages } from "./llmLogsToChat";
 import type { LlmLogRow } from "./types";

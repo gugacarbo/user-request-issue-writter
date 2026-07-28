@@ -580,7 +580,7 @@ describe("dashboard static SPA serving", () => {
 		vi.clearAllMocks();
 	});
 
-	it("vite build emits asset URLs under /app/", () => {
+	it("vite build emits asset URLs under /app/", { timeout: 120_000 }, () => {
 		const repoRoot = resolve(import.meta.dirname, "..", "..");
 		execSync("pnpm app:build", { cwd: repoRoot, stdio: "pipe" });
 		const html = readFileSync(

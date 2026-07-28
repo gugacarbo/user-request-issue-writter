@@ -71,14 +71,19 @@ export function formatTicketHeader(input: TicketHeaderInput): string {
 
 const SESSION_CONTEXT_HEADING = "## Contexto da sessão";
 
-export function formatTicketDiagnostics(input: TicketHeaderInput): string | null {
+export function formatTicketDiagnostics(
+	input: TicketHeaderInput,
+): string | null {
 	const sections: string[] = [];
 
 	if (input.contextoSessao?.trim()) {
 		sections.push(SESSION_CONTEXT_HEADING, "", input.contextoSessao.trim());
 	}
 	if (input.logsConsole?.trim()) {
-		sections.push("### Logs do console", ...fencedBlock(input.logsConsole, "text"));
+		sections.push(
+			"### Logs do console",
+			...fencedBlock(input.logsConsole, "text"),
+		);
 	}
 	if (input.logsRede?.trim()) {
 		sections.push("### Logs de rede", ...fencedBlock(input.logsRede, "text"));
@@ -144,9 +149,7 @@ export type BuildIssueBodyInput = {
 };
 
 export function buildIssueBody(input: BuildIssueBodyInput): string {
-	const headerSection = input.ticket
-		? [formatTicketHeader(input.ticket)]
-		: [];
+	const headerSection = input.ticket ? [formatTicketHeader(input.ticket)] : [];
 
 	const rawMessage = input.rawUserMessage.trim();
 	const rawSection = rawMessage

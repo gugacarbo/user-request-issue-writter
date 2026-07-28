@@ -23,7 +23,9 @@ type ExtractTicketOptions = {
 	readonly nocobasePublicUrl?: string;
 };
 
-function normalizeMetadata(value: unknown): Record<string, unknown> | undefined {
+function normalizeMetadata(
+	value: unknown,
+): Record<string, unknown> | undefined {
 	if (value === null || value === undefined) return undefined;
 	if (typeof value !== "object" || Array.isArray(value)) return undefined;
 	const record = value as Record<string, unknown>;

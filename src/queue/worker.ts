@@ -11,6 +11,7 @@ import {
 	claimNextDue,
 	finalizeProcessing,
 	getRequest,
+	requeueForRetry,
 	requeueStaleProcessing,
 } from "./queue";
 
@@ -26,6 +27,12 @@ export type WorkerDeps = {
 	readonly pollIntervalMs?: number;
 	/** Hard cap on attempts before giving up (default 3). */
 	readonly maxAttempts?: number;
+	/**
+	 * Seconds to wait before the next pickup after a retryable failure.
+	 * Receives the current `queue.attempts` (post-claim). Defaults to
+	 * exponential backoff capped at 5 minutes.
+	 */
+	readonly retryBackoffSeconds?: (attempts: number) => number;
 	/** Logger sink for worker lifecycle; defaults to console. */
 	readonly log?: (level: "info" | "error", msg: string, data?: unknown) => void;
 };
@@ -43,6 +50,8 @@ export type WorkerHandle = { readonly stop: () => Promise<void> };
 export function startWorker(deps: WorkerDeps): WorkerHandle {
 	const pollIntervalMs = deps.pollIntervalMs ?? 1000;
 	const maxAttempts = deps.maxAttempts ?? 3;
+	const retryBackoffSeconds =
+		deps.retryBackoffSeconds ?? defaultRetryBackoffSeconds;
 	const log = deps.log ?? ((level, msg, data) => console[level](msg, data));
 	const queueDeps: QueueDeps = { db: deps.db };
 
@@ -57,7 +66,7 @@ export function startWorker(deps: WorkerDeps): WorkerHandle {
 	const tick = async (): Promise<void> => {
 		if (stopped) return;
 		try {
-			await processOne(deps, queueDeps, maxAttempts, log);
+			await processOne(deps, queueDeps, maxAttempts, retryBackoffSeconds, log);
 		} catch (error) {
 			log("error", "worker tick failed", error);
 		} finally {
@@ -80,10 +89,16 @@ export function startWorker(deps: WorkerDeps): WorkerHandle {
 	};
 }
 
+function defaultRetryBackoffSeconds(attempts: number): number {
+	const exponent = Math.max(0, attempts - 1);
+	return Math.min(300, 5 * 2 ** exponent);
+}
+
 async function processOne(
 	deps: WorkerDeps,
 	queueDeps: QueueDeps,
 	maxAttempts: number,
+	retryBackoffSeconds: (attempts: number) => number,
 	log: NonNullable<WorkerDeps["log"]>,
 ): Promise<void> {
 	const claimed = claimNextDue(queueDeps);
@@ -149,13 +164,15 @@ async function processOne(
 			},
 		});
 		if (!proposal) {
-			finalizeProcessing(queueDeps, {
+			handleRetryableFailure(queueDeps, {
 				queueId,
 				requestId,
-				status: "failed",
+				attempts,
+				maxAttempts,
 				lastError: "agent did not call submit_issue",
+				retryBackoffSeconds,
+				log,
 			});
-			log("info", "worker: agent produced no proposal", { requestId });
 			return;
 		}
 
@@ -194,14 +211,59 @@ async function processOne(
 		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		finalizeProcessing(queueDeps, {
+		handleRetryableFailure(queueDeps, {
 			queueId,
 			requestId,
-			status: "failed",
+			attempts,
+			maxAttempts,
 			lastError: message,
+			retryBackoffSeconds,
+			log,
 		});
-		log("error", "worker run failed", { requestId, error: message });
 	}
+}
+
+function handleRetryableFailure(
+	queueDeps: QueueDeps,
+	input: {
+		readonly queueId: number;
+		readonly requestId: number;
+		readonly attempts: number;
+		readonly maxAttempts: number;
+		readonly lastError: string;
+		readonly retryBackoffSeconds: (attempts: number) => number;
+		readonly log: NonNullable<WorkerDeps["log"]>;
+	},
+): void {
+	if (input.attempts >= input.maxAttempts) {
+		finalizeProcessing(queueDeps, {
+			queueId: input.queueId,
+			requestId: input.requestId,
+			status: "failed",
+			lastError: input.lastError,
+		});
+		input.log("error", "worker run failed", {
+			requestId: input.requestId,
+			error: input.lastError,
+			attempts: input.attempts,
+		});
+		return;
+	}
+
+	const now = Math.floor(Date.now() / 1000);
+	const backoffSeconds = input.retryBackoffSeconds(input.attempts);
+	requeueForRetry(queueDeps, {
+		queueId: input.queueId,
+		requestId: input.requestId,
+		lastError: input.lastError,
+		nextRunAt: now + backoffSeconds,
+	});
+	input.log("info", "worker scheduled retry", {
+		requestId: input.requestId,
+		attempts: input.attempts,
+		backoffSeconds,
+		error: input.lastError,
+	});
 }
 
 function parseStoredTicket(payloadJson: string, nocobasePublicUrl?: string) {

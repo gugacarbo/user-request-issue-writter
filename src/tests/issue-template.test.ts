@@ -4,8 +4,8 @@ import {
 	agentIssueBodyInstructions,
 	buildIssueBody,
 	formatScreenshotMarkdown,
-	formatTicketHeader,
 	formatTicketDiagnostics,
+	formatTicketHeader,
 	toTicketHeaderInput,
 } from "../issue/template";
 
@@ -53,7 +53,9 @@ describe("issue template", () => {
 		expect(header).toContain("**Solicitante:** Alice (alice@example.com)");
 		expect(header).toContain("**URL atual:** https://app.example.com/login");
 		expect(header).toContain("**Categoria:** bug");
-		expect(header).toContain("**Screenshot:** https://cdn.example.com/shot.png");
+		expect(header).toContain(
+			"**Screenshot:** https://cdn.example.com/shot.png",
+		);
 		expect(header).not.toContain("Contexto da sessão");
 		expect(header).not.toContain("Logs do console");
 		expect(header).toContain("### Metadados");
@@ -92,6 +94,99 @@ describe("issue template", () => {
 				}),
 			),
 		).toBeNull();
+	});
+
+	it("formatTicketHeader omits requester when name and email are empty", () => {
+		const header = formatTicketHeader(
+			toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "   ",
+				requesterEmail: "",
+			}),
+		);
+
+		expect(header).not.toContain("**Solicitante:**");
+	});
+
+	it("formatTicketHeader supports name-only and email-only requesters", () => {
+		const nameOnly = formatTicketHeader(
+			toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "",
+			}),
+		);
+		const emailOnly = formatTicketHeader(
+			toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "",
+				requesterEmail: "alice@example.com",
+			}),
+		);
+
+		expect(nameOnly).toContain("**Solicitante:** Alice");
+		expect(emailOnly).toContain("**Solicitante:** alice@example.com");
+	});
+
+	it("formatTicketDiagnostics renders only relevant sections", () => {
+		expect(
+			formatTicketDiagnostics(
+				toTicketHeaderInput({
+					owner: "owner",
+					repo: "repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					logsConsole: "console only",
+				}),
+			),
+		).toContain("### Logs do console");
+
+		expect(
+			formatTicketDiagnostics(
+				toTicketHeaderInput({
+					owner: "owner",
+					repo: "repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					logsRede: "network only",
+				}),
+			),
+		).toContain("### Logs de rede");
+
+		expect(
+			formatTicketDiagnostics(
+				toTicketHeaderInput({
+					owner: "owner",
+					repo: "repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+					contextoSessao: "   ",
+				}),
+			),
+		).toBeNull();
+	});
+
+	it("buildIssueBody omits diagnostics when only metadata is present", () => {
+		const body = buildIssueBody({
+			agentBody: "## Resumo\nDone.",
+			rawUserMessage: "help",
+			ticket: toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				metadata: { ticketId: "42" },
+			}),
+			requesterName: "Alice",
+			requesterEmail: "alice@example.com",
+		});
+
+		expect(body).toContain("### Metadados");
+		expect(body).not.toContain("## Contexto da sessão");
+		expect(body).not.toContain("### Logs do console");
 	});
 
 	it("buildIssueBody places diagnostics after agent content and before footer", () => {
@@ -154,8 +249,7 @@ describe("issue template", () => {
 				requesterName: "Alice",
 				requesterEmail: "alice@example.com",
 			}),
-			screenshotMarkdown:
-				"![Screenshot](https://cdn.example.com/shot.png)",
+			screenshotMarkdown: "![Screenshot](https://cdn.example.com/shot.png)",
 			requesterName: "Alice",
 			requesterEmail: "alice@example.com",
 		});
@@ -192,6 +286,19 @@ describe("issue template", () => {
 			body.indexOf("## Resumo"),
 		);
 		expect(body).toContain("_Requested by Alice (alice@example.com)_");
+	});
+
+	it("buildIssueBody uses screenshot fallback when markdown is not provided", () => {
+		const body = buildIssueBody({
+			agentBody: "## Resumo\nDone.",
+			rawUserMessage: "help",
+			screenshot: "https://cdn.example.com/shot.png",
+			requesterName: "Alice",
+			requesterEmail: "alice@example.com",
+		});
+
+		expect(body).toContain("## Screenshot");
+		expect(body).toContain("![Screenshot](https://cdn.example.com/shot.png)");
 	});
 
 	it("buildIssueBody omits raw section when message is empty", () => {

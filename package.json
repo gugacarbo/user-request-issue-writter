@@ -15,7 +15,7 @@
 		"test:watch": "vitest",
 		"lint": "biome check",
 		"format": "biome check --write",
-		"typecheck": "tsc",
+		"typecheck": "tsc && tsc -p src/app/tsconfig.json",
 		"knip": "knip",
 		"prepare": "husky",
 		"docs-check": "python3 scripts/docs-check",

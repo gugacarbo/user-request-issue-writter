@@ -185,6 +185,45 @@ export type FinalizeInput = {
 	readonly lastError?: string;
 };
 
+export type RequeueInput = {
+	readonly queueId: number;
+	readonly requestId: number;
+	readonly lastError: string;
+	/** Unix epoch seconds; worker schedules the next pickup at or after this time. */
+	readonly nextRunAt: number;
+};
+
+/**
+ * Return a failed run to `pending` for another pickup (ADR-0008 retries).
+ * Does not reset `queue.attempts` — the counter reflects how many times the
+ * worker has already claimed this item.
+ */
+export function requeueForRetry(deps: QueueDeps, input: RequeueInput): void {
+	const { db } = deps;
+	const now = Math.floor(Date.now() / 1000);
+
+	db.transaction((tx) => {
+		tx.update(queueTable)
+			.set({
+				status: "pending",
+				lastError: input.lastError,
+				nextRunAt: input.nextRunAt,
+				updatedAt: now,
+			})
+			.where(eq(queueTable.id, input.queueId))
+			.run();
+
+		tx.update(requests)
+			.set({
+				status: "pending",
+				lastError: input.lastError,
+				updatedAt: now,
+			})
+			.where(eq(requests.id, input.requestId))
+			.run();
+	});
+}
+
 /** Mark a processed item as done/failed in BOTH queue and requests (txn). */
 export function finalizeProcessing(
 	deps: QueueDeps,
