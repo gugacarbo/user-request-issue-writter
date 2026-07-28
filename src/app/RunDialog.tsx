@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LogsPanel } from "./LogsPanel";
 import { StatusBadge } from "./StatusBadge";
 import type { RunDetail } from "./types";
+import { useRequestRun } from "./useRequestRun";
 
 function formatTime(unixSeconds: number): string {
 	if (!unixSeconds) return "—";
@@ -18,9 +19,9 @@ function formatTime(unixSeconds: number): string {
 }
 
 /**
- * Modal showing the detail of one agent run (ADR-0009 run dialog). Fetches
- * `/app/api/requests/:id` on open and renders two tabs: a summary of the
- * request/queue state, and the ordered agent log lines (replay of the run).
+ * Modal showing the detail of one agent run (ADR-0009 run dialog). Polls
+ * `/app/api/requests/:id` while the run is pending/processing so agent logs
+ * update live; settles when the run reaches a terminal status.
  */
 export function RunDialog({
 	requestId,
@@ -29,34 +30,10 @@ export function RunDialog({
 	requestId: number;
 	onClose: () => void;
 }) {
-	const [run, setRun] = useState<RunDetail | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	const { run, error, loading, reload } = useRequestRun(requestId);
 	const [tab, setTab] = useState<"summary" | "logs">("summary");
 	const [retrying, setRetrying] = useState(false);
 	const [retryError, setRetryError] = useState<string | null>(null);
-
-	const loadRun = useCallback(async () => {
-		const res = await fetch(`/app/api/requests/${requestId}`);
-		if (!res.ok) throw new Error(`HTTP ${res.status}`);
-		return (await res.json()) as RunDetail;
-	}, [requestId]);
-
-	useEffect(() => {
-		let alive = true;
-		setRun(null);
-		setError(null);
-		setRetryError(null);
-		loadRun()
-			.then((data) => {
-				if (alive) setRun(data);
-			})
-			.catch((e: unknown) => {
-				if (alive) setError(e instanceof Error ? e.message : String(e));
-			});
-		return () => {
-			alive = false;
-		};
-	}, [loadRun]);
 
 	const handleRetry = async () => {
 		setRetrying(true);
@@ -71,15 +48,17 @@ export function RunDialog({
 				} | null;
 				throw new Error(body?.error ?? `HTTP ${res.status}`);
 			}
-			const data = (await res.json()) as { run?: RunDetail };
-			if (data.run) setRun(data.run);
-			else setRun(await loadRun());
+			await reload();
 		} catch (e: unknown) {
 			setRetryError(e instanceof Error ? e.message : String(e));
 		} finally {
 			setRetrying(false);
 		}
 	};
+
+	const isLive =
+		run?.request.status === "pending" ||
+		run?.request.status === "processing";
 
 	return (
 		<Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -88,7 +67,14 @@ export function RunDialog({
 				aria-label={`Execução #${requestId}`}
 			>
 				<DialogHeader className="border-b px-4 py-3">
-					<DialogTitle>Execução #{requestId}</DialogTitle>
+					<DialogTitle className="flex items-center gap-2">
+						Execução #{requestId}
+						{isLive ? (
+							<span className="text-xs font-normal text-muted-foreground">
+								atualizando…
+							</span>
+						) : null}
+					</DialogTitle>
 				</DialogHeader>
 
 				<Tabs
@@ -109,7 +95,7 @@ export function RunDialog({
 							<p className="text-sm text-muted-foreground">
 								Erro ao carregar: {error}
 							</p>
-						) : !run ? (
+						) : loading || !run ? (
 							<p className="text-sm text-muted-foreground">Carregando…</p>
 						) : (
 							<RunSummary
@@ -126,11 +112,13 @@ export function RunDialog({
 							<p className="text-sm text-muted-foreground">
 								Erro ao carregar: {error}
 							</p>
-						) : !run ? (
+						) : loading || !run ? (
 							<p className="text-sm text-muted-foreground">Carregando…</p>
 						) : run.logs.length === 0 ? (
 							<p className="text-sm text-muted-foreground">
-								Nenhum log de agente para esta execução.
+								{isLive
+									? "Aguardando logs do agente…"
+									: "Nenhum log de agente para esta execução."}
 							</p>
 						) : (
 							<LogsPanel logs={run.logs} className="h-[min(50vh,400px)]" />
@@ -188,43 +176,43 @@ function RunSummary({
 				<p className="text-sm text-destructive">Erro ao reenfileirar: {retryError}</p>
 			) : null}
 			<div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-			<Row label="Status">
-				<StatusBadge status={request.status} />
-			</Row>
-			<Row label="Repo">{request.repo}</Row>
-			<Row label="Owner">{request.owner}</Row>
-			<Row label="Requester">{request.requesterName}</Row>
-			<Row label="Email">{request.requesterEmail}</Row>
-			<Row label="Tentativas">{request.attempts}</Row>
-			<Row label="Issue">
-				{request.issueNumber ? (
-					<a
-						href={request.issueUrl ?? "#"}
-						target="_blank"
-						rel="noreferrer"
-						className="text-primary hover:underline"
-					>
-						#{request.issueNumber}
-					</a>
-				) : (
-					"—"
-				)}
-			</Row>
-			<Row label="Delivery">{request.deliveryId ?? "—"}</Row>
-			<Row label="Criado em">{formatTime(request.createdAt)}</Row>
-			<Row label="Atualizado em">{formatTime(request.updatedAt)}</Row>
-			{queue ? (
-				<Row label="Próxima execução">{formatTime(queue.nextRunAt)}</Row>
-			) : null}
-			<Row label="Erro">
-				{request.lastError ? (
-					<code className="font-mono text-xs text-destructive break-words whitespace-pre-wrap">
-						{request.lastError}
-					</code>
-				) : (
-					"—"
-				)}
-			</Row>
+				<Row label="Status">
+					<StatusBadge status={request.status} />
+				</Row>
+				<Row label="Repo">{request.repo}</Row>
+				<Row label="Owner">{request.owner}</Row>
+				<Row label="Requester">{request.requesterName}</Row>
+				<Row label="Email">{request.requesterEmail}</Row>
+				<Row label="Tentativas">{request.attempts}</Row>
+				<Row label="Issue">
+					{request.issueNumber ? (
+						<a
+							href={request.issueUrl ?? "#"}
+							target="_blank"
+							rel="noreferrer"
+							className="text-primary hover:underline"
+						>
+							#{request.issueNumber}
+						</a>
+					) : (
+						"—"
+					)}
+				</Row>
+				<Row label="Delivery">{request.deliveryId ?? "—"}</Row>
+				<Row label="Criado em">{formatTime(request.createdAt)}</Row>
+				<Row label="Atualizado em">{formatTime(request.updatedAt)}</Row>
+				{queue ? (
+					<Row label="Próxima execução">{formatTime(queue.nextRunAt)}</Row>
+				) : null}
+				<Row label="Erro">
+					{request.lastError ? (
+						<code className="font-mono text-xs text-destructive break-words whitespace-pre-wrap">
+							{request.lastError}
+						</code>
+					) : (
+						"—"
+					)}
+				</Row>
 			</div>
 		</div>
 	);

@@ -202,7 +202,7 @@ describe("llm.generateIssue", () => {
 		expect(proposal).toBeNull();
 	});
 
-	it("calls onDebug with truncated content for large tool results", async () => {
+	it("calls onDebug with full tool result content", async () => {
 		const longContent = "x".repeat(600);
 		const gh = mockGitHub();
 		(gh.getFileContent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -226,7 +226,7 @@ describe("llm.generateIssue", () => {
 		);
 		expect(resultCall?.[1]).toMatchObject({
 			tool: "read_file",
-			result: expect.stringContaining("...(truncated)"),
+			result: longContent,
 		});
 	});
 });

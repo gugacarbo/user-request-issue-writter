@@ -67,6 +67,7 @@ export function createOpenAiLlmClient(options: OpenAiClientOptions): LlmClient {
 
 			const choice = completion.choices[0];
 			const message = choice?.message;
+			const usage = completion.usage;
 			const toolCalls: ToolCall[] = [];
 
 			for (const raw of message?.tool_calls ?? []) {
@@ -87,7 +88,18 @@ export function createOpenAiLlmClient(options: OpenAiClientOptions): LlmClient {
 				toolCalls.push({ name, arguments: args });
 			}
 
-			return { toolCalls, content: message?.content ?? null };
+			return {
+				toolCalls,
+				content: message?.content ?? null,
+				finishReason: choice?.finish_reason ?? null,
+				usage: usage
+					? {
+							promptTokens: usage.prompt_tokens ?? 0,
+							completionTokens: usage.completion_tokens ?? 0,
+							totalTokens: usage.total_tokens ?? 0,
+						}
+					: undefined,
+			};
 		},
 	};
 }

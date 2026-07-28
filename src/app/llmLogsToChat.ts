@@ -20,32 +20,70 @@ type ToolPart = {
 };
 
 function toolPartType(toolName: string): ToolPartType {
-	switch (toolName) {
-		case "read_file":
-			return "tool-Read";
-		case "list_files":
-			return "tool-Glob";
-		default:
-			return `tool-${toolName}`;
-	}
+	return `tool-${toolName}` as ToolPartType;
 }
 
-function toolCallId(toolName: string, iteration: number | null): string {
-	return `${toolName}-${iteration ?? 0}`;
+export function toolCallId(
+	toolName: string,
+	iteration: number | null,
+	toolIndex = 0,
+): string {
+	return `${toolName}-${iteration ?? 0}-${toolIndex}`;
+}
+
+function toolIndexFromLog(data: Record<string, unknown> | null): number {
+	const value = data?.toolIndex;
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function mapToolInput(
-	toolName: string,
 	args: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-	const input = args ?? {};
-	if (toolName === "read_file" && typeof input.path === "string") {
-		return { file_path: input.path };
+	return args ?? {};
+}
+
+export function mapToolOutput(toolName: string, result: unknown): unknown {
+	if (typeof result !== "string") return result;
+	switch (toolName) {
+		case "list_files": {
+			const files = result
+				.split("\n")
+				.map((line) => line.trim())
+				.filter(Boolean);
+			return { files, numFiles: files.length, text: result };
+		}
+		case "read_file": {
+			const lines = result.split("\n");
+			return { content: result, lineCount: lines.length };
+		}
+		case "get_repo_info":
+			return { text: result };
+		default:
+			return { text: result };
 	}
-	if (toolName === "list_files") {
-		return { pattern: "*", ...input };
+}
+
+function resolveToolCallId(
+	log: LlmLogRow,
+	toolName: string,
+	tools: Map<string, ToolPart>,
+): string {
+	const iteration = log.iteration;
+	const toolIndex = toolIndexFromLog(log.data);
+	const id = toolCallId(toolName, iteration, toolIndex);
+	if (tools.has(id)) return id;
+
+	// Back-compat: logs written before toolIndex used name-iteration only.
+	const legacyId = `${toolName}-${iteration ?? 0}`;
+	if (tools.has(legacyId)) return legacyId;
+
+	const prefix = `${toolName}-${iteration ?? 0}-`;
+	for (const [key, part] of tools) {
+		if (key.startsWith(prefix) && part.state !== "output-available") {
+			return key;
+		}
 	}
-	return input;
+	return id;
 }
 
 function formatStartedMessage(data: Record<string, unknown> | null): string {
@@ -63,12 +101,43 @@ function formatStartedMessage(data: Record<string, unknown> | null): string {
 	return parts.join("\n\n");
 }
 
+function formatLlmMeta(data: Record<string, unknown> | null): string | null {
+	if (!data) return null;
+	const lines: string[] = [];
+	const finishReason = data.finishReason;
+	if (typeof finishReason === "string" && finishReason) {
+		lines.push(`finish_reason: \`${finishReason}\``);
+	}
+	const usage = data.usage;
+	if (usage && typeof usage === "object") {
+		const u = usage as Record<string, unknown>;
+		const prompt = u.promptTokens;
+		const completion = u.completionTokens;
+		const total = u.totalTokens;
+		if (
+			typeof prompt === "number" &&
+			typeof completion === "number" &&
+			typeof total === "number"
+		) {
+			lines.push(
+				`tokens: ${total} (prompt ${prompt}, completion ${completion})`,
+			);
+		}
+	}
+	return lines.length > 0 ? lines.join(" · ") : null;
+}
+
 function markerText(
 	event: string,
 	data: Record<string, unknown> | null,
 ): string {
+	const labels: Record<string, string> = {
+		"no tool calls, ending loop": "Agente encerrou sem chamar ferramentas",
+		"max iterations reached": "Limite de iterações atingido",
+	};
+	const label = labels[event] ?? event;
 	const detail = summarizeMarkerData(data);
-	return detail ? `**${event}** — ${detail}` : `**${event}**`;
+	return detail ? `**${label}** — ${detail}` : `**${label}**`;
 }
 
 function summarizeMarkerData(data: Record<string, unknown> | null): string {
@@ -92,7 +161,7 @@ function summarizeMarkerData(data: Record<string, unknown> | null): string {
  */
 export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 	const messages: UIMessage[] = [];
-	const toolParts = new Map<string, ToolPart>();
+	const tools = new Map<string, ToolPart>();
 	let lastRequestId: number | null = null;
 
 	for (const log of logs) {
@@ -105,6 +174,7 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 					},
 				]),
 			);
+			tools.clear();
 		}
 		lastRequestId = log.requestId;
 
@@ -122,6 +192,16 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 
 			case "llm response": {
 				const parts: Array<{ type: "text"; text: string } | ToolPart> = [];
+				if (log.iteration !== null) {
+					parts.push({
+						type: "text",
+						text: `**Turno ${log.iteration + 1}**`,
+					});
+				}
+				const meta = formatLlmMeta(log.data);
+				if (meta) {
+					parts.push({ type: "text", text: meta });
+				}
 				const content = log.data?.content;
 				if (typeof content === "string" && content.trim()) {
 					parts.push({ type: "text", text: content });
@@ -129,16 +209,17 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 
 				const toolCalls = log.data?.toolCalls;
 				if (Array.isArray(toolCalls)) {
-					for (const name of toolCalls) {
+					for (let i = 0; i < toolCalls.length; i++) {
+						const name = toolCalls[i];
 						if (typeof name !== "string") continue;
-						const id = toolCallId(name, log.iteration);
+						const id = toolCallId(name, log.iteration, i);
 						const part: ToolPart = {
 							type: toolPartType(name),
 							toolCallId: id,
 							state: "input-available",
 							input: {},
 						};
-						toolParts.set(id, part);
+						tools.set(id, part);
 						parts.push(part);
 					}
 				}
@@ -152,23 +233,23 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 			case "tool dispatched": {
 				const toolName = log.toolName ?? String(log.data?.tool ?? "");
 				if (!toolName) break;
-				const id = toolCallId(toolName, log.iteration);
-				const existing = toolParts.get(id);
+				const id = resolveToolCallId(log, toolName, tools);
 				const args =
 					log.data?.arguments && typeof log.data.arguments === "object"
 						? (log.data.arguments as Record<string, unknown>)
 						: undefined;
+				const existing = tools.get(id);
 				if (existing) {
-					existing.input = mapToolInput(toolName, args);
+					existing.input = mapToolInput(args);
 					existing.state = "input-available";
 				} else {
 					const part: ToolPart = {
 						type: toolPartType(toolName),
 						toolCallId: id,
 						state: "input-available",
-						input: mapToolInput(toolName, args),
+						input: mapToolInput(args),
 					};
-					toolParts.set(id, part);
+					tools.set(id, part);
 					messages.push(
 						uiMessage(`tool-dispatch-${log.id}`, "assistant", [part]),
 					);
@@ -179,10 +260,11 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 			case "tool result": {
 				const toolName = log.toolName ?? String(log.data?.tool ?? "");
 				if (!toolName) break;
-				const id = toolCallId(toolName, log.iteration);
-				const part = toolParts.get(id);
+				const id = resolveToolCallId(log, toolName, tools);
+				const part = tools.get(id);
+				const output = mapToolOutput(toolName, log.data?.result);
 				if (part) {
-					part.output = log.data?.result;
+					part.output = output;
 					part.state = "output-available";
 				} else {
 					messages.push(
@@ -191,8 +273,8 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 								type: toolPartType(toolName),
 								toolCallId: id,
 								state: "output-available",
-								input: mapToolInput(toolName, undefined),
-								output: log.data?.result,
+								input: {},
+								output,
 							},
 						]),
 					);
@@ -203,22 +285,36 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 			case "submit_issue called": {
 				const title =
 					typeof log.data?.title === "string" ? log.data.title : "Issue";
+				const body =
+					typeof log.data?.body === "string" ? log.data.body : undefined;
 				const labels = Array.isArray(log.data?.labels)
 					? log.data.labels.filter((l) => typeof l === "string")
 					: [];
-				const id = toolCallId("submit_issue", log.iteration);
-				const part: ToolPart = {
-					type: "tool-submit_issue",
-					toolCallId: id,
-					state: "output-available",
-					input: {
-						title,
-						labels,
-					},
-					output: "Issue draft submitted",
+				const id = resolveToolCallId(log, "submit_issue", tools);
+				const part = tools.get(id);
+				const output = {
+					title,
+					body,
+					labels,
+					message: "Rascunho da issue enviado",
 				};
-				toolParts.set(id, part);
-				messages.push(uiMessage(`submit-${log.id}`, "assistant", [part]));
+				if (part) {
+					part.input = { title, labels, ...(body ? { body } : {}) };
+					part.output = output;
+					part.state = "output-available";
+				} else {
+					const created: ToolPart = {
+						type: "tool-submit_issue",
+						toolCallId: id,
+						state: "output-available",
+						input: { title, labels, ...(body ? { body } : {}) },
+						output,
+					};
+					tools.set(id, created);
+					messages.push(
+						uiMessage(`submit-${log.id}`, "assistant", [created]),
+					);
+				}
 				break;
 			}
 

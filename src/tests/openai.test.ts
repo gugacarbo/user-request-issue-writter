@@ -40,6 +40,40 @@ describe("openai client", () => {
 		expect(createMock).toHaveBeenCalled();
 	});
 
+	it("returns finish reason and token usage when present", async () => {
+		createMock.mockResolvedValueOnce({
+			choices: [
+				{
+					finish_reason: "tool_calls",
+					message: {
+						content: null,
+						tool_calls: [],
+					},
+				},
+			],
+			usage: {
+				prompt_tokens: 12,
+				completion_tokens: 4,
+				total_tokens: 16,
+			},
+		});
+		const { createOpenAiLlmClient } = await import("../llm/openai");
+		const client = createOpenAiLlmClient({
+			baseUrl: "https://api.example.com",
+			apiKey: "sk-test",
+			model: "gpt-4",
+		});
+		const response = await client.chat({
+			messages: [{ role: "user", content: "hi" }],
+		});
+		expect(response.finishReason).toBe("tool_calls");
+		expect(response.usage).toEqual({
+			promptTokens: 12,
+			completionTokens: 4,
+			totalTokens: 16,
+		});
+	});
+
 	it("parses tool calls from the completion response", async () => {
 		createMock.mockResolvedValueOnce({
 			choices: [

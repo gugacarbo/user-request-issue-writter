@@ -7,6 +7,7 @@ import { ModeToggle } from "./components/mode-toggle";
 import { LogsPanel } from "./LogsPanel";
 import { QueueTable } from "./QueueTable";
 import { RunDialog } from "./RunDialog";
+import { mergeLogRows } from "./mergeLogs";
 import type { Counts, LlmLogRow, QueueSummaryRow } from "./types";
 import { useSse } from "./useSse";
 
@@ -35,17 +36,7 @@ export function App() {
 	useEffect(() => {
 		const incoming = logs.data?.logs;
 		if (!incoming || incoming.length === 0) return;
-		setAllLogs((prev) => {
-			const seen = new Set(prev.map((l) => l.id));
-			const next = [...prev];
-			for (const l of incoming) {
-				if (!seen.has(l.id)) {
-					next.push(l);
-					seen.add(l.id);
-				}
-			}
-			return next.slice(-1000);
-		});
+		setAllLogs((prev) => mergeLogRows(prev, incoming));
 	}, [logs.data]);
 
 	const counts = useMemo<Counts>(() => {

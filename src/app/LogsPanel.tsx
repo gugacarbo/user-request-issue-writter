@@ -8,6 +8,20 @@ import type { LlmLogRow } from "./types";
 
 type LogsView = "list" | "chat";
 
+const EVENT_LABELS: Record<string, string> = {
+	"generateIssue started": "início",
+	"llm response": "resposta LLM",
+	"tool dispatched": "tool chamada",
+	"tool result": "resultado tool",
+	"submit_issue called": "issue enviada",
+	"no tool calls, ending loop": "sem tools",
+	"max iterations reached": "limite de iterações",
+};
+
+function formatEvent(event: string): string {
+	return EVENT_LABELS[event] ?? event;
+}
+
 function formatTime(unixSeconds: number): string {
 	if (!unixSeconds) return "—";
 	const d = new Date(unixSeconds * 1000);
@@ -66,7 +80,7 @@ function LogsListView({
 								{l.toolName}
 							</span>
 						)}
-						<span className="shrink-0">{l.event}</span>
+						<span className="shrink-0">{formatEvent(l.event)}</span>
 						<span className="truncate text-muted-foreground">
 							{summarizeData(l.data)}
 						</span>
@@ -86,7 +100,7 @@ export function LogsPanel({
 	className?: string;
 	showViewToggle?: boolean;
 }) {
-	const [view, setView] = useState<LogsView>("list");
+	const [view, setView] = useState<LogsView>("chat");
 	const capped = useMemo(() => logs.slice(-300), [logs]);
 	const panelHeight = className ?? "h-[360px]";
 

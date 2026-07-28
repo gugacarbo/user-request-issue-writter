@@ -30,6 +30,12 @@ export type ChatRequest = {
 export type ChatResponse = {
 	readonly toolCalls: ToolCall[];
 	readonly content: string | null;
+	readonly finishReason?: string | null;
+	readonly usage?: {
+		readonly promptTokens: number;
+		readonly completionTokens: number;
+		readonly totalTokens: number;
+	};
 };
 
 export type LlmClient = {
@@ -128,6 +134,8 @@ export async function generateIssue(
 			iteration,
 			toolCalls: toolCalls.map((t) => t.name),
 			content: response.content,
+			finishReason: response.finishReason ?? null,
+			usage: response.usage ?? null,
 		});
 
 		if (toolCalls.length === 0) {
@@ -141,9 +149,11 @@ export async function generateIssue(
 			tool_calls: toolCalls,
 		});
 
-		for (const call of toolCalls) {
+		for (let toolIndex = 0; toolIndex < toolCalls.length; toolIndex += 1) {
+			const call = toolCalls[toolIndex];
 			debug?.("tool dispatched", {
 				iteration,
+				toolIndex,
 				tool: call.name,
 				arguments: call.arguments,
 			});
@@ -158,27 +168,26 @@ export async function generateIssue(
 
 			if (result.isTerminal) {
 				debug?.("submit_issue called", {
+					iteration,
+					toolIndex,
 					title: result.issue.title,
+					body: result.issue.body,
 					labels: result.issue.labels,
 				});
 				return result.issue;
 			}
 
-			const preview =
-				result.content.length > 500
-					? `${result.content.slice(0, 500)}...(truncated)`
-					: result.content;
-
 			debug?.("tool result", {
 				iteration,
+				toolIndex,
 				tool: call.name,
-				result: preview,
+				result: result.content,
 			});
 
 			messages.push({
 				role: "tool",
 				content: result.content,
-				tool_call_id: callNameId(call.name, iteration),
+				tool_call_id: callNameId(call.name, iteration, toolIndex),
 			});
 		}
 	}
@@ -187,6 +196,10 @@ export async function generateIssue(
 	return null;
 }
 
-function callNameId(name: string, iteration: number): string {
-	return `${name}-${iteration}`;
+function callNameId(
+	name: string,
+	iteration: number,
+	toolIndex: number,
+): string {
+	return `${name}-${iteration}-${toolIndex}`;
 }
