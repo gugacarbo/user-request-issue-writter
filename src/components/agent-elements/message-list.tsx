@@ -467,12 +467,13 @@ export const MessageList = memo(function MessageList({
     [normalizedMessages],
   );
   const showPlanning = useMemo(() => {
+    if (!isStreaming) return false;
     const lastMessage = normalizedMessages[normalizedMessages.length - 1];
     if (!lastMessage) return false;
     const lastTurn = turns[turns.length - 1];
     const hasAssistant = Boolean(lastTurn && lastTurn.assistantMsgs.length > 0);
     if (lastMessage.role === "user" && !hasAssistant) return true;
-    return isStreaming && !getLastAssistantHasContent(normalizedMessages);
+    return !getLastAssistantHasContent(normalizedMessages);
   }, [isStreaming, normalizedMessages, turns]);
   const isNewAssistantMessage =
     lastMessageRole === "assistant" &&

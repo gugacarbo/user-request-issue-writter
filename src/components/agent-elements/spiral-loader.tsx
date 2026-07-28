@@ -1,4 +1,4 @@
-import Lottie, { type LottieRefCurrentProps } from "lottie-react";
+import { useLottie, type LottieRefCurrentProps } from "lottie-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { cn } from "./utils/cn";
@@ -56,6 +56,28 @@ export function SpiralLoader({ size = 16, className }: SpiralLoaderProps) {
     }
   }, [startFastPhase]);
 
+  const lottieStyle = { width: "100%", height: "100%" } as const;
+  const { View: FastView } = useLottie(
+    {
+      lottieRef: fastRef,
+      animationData: spiralFastData,
+      loop: false,
+      autoplay: true,
+      onComplete: handleFastComplete,
+    },
+    lottieStyle,
+  );
+  const { View: SlowView } = useLottie(
+    {
+      lottieRef: slowRef,
+      animationData: spiralSlowData,
+      loop: false,
+      autoplay: false,
+      onComplete: handleSlowComplete,
+    },
+    lottieStyle,
+  );
+
   if (!isMounted) return null;
   const needsInvert = resolvedTheme !== "dark";
 
@@ -71,14 +93,7 @@ export function SpiralLoader({ size = 16, className }: SpiralLoaderProps) {
           phase === "fast" ? "opacity-100" : "opacity-0",
         )}
       >
-        <Lottie
-          lottieRef={fastRef}
-          animationData={spiralFastData}
-          loop={false}
-          autoplay={true}
-          onComplete={handleFastComplete}
-          style={{ width: "100%", height: "100%" }}
-        />
+        {FastView}
       </div>
       <div
         className={cn(
@@ -87,14 +102,7 @@ export function SpiralLoader({ size = 16, className }: SpiralLoaderProps) {
           phase === "slow" ? "opacity-100" : "opacity-0",
         )}
       >
-        <Lottie
-          lottieRef={slowRef}
-          animationData={spiralSlowData}
-          loop={false}
-          autoplay={false}
-          onComplete={handleSlowComplete}
-          style={{ width: "100%", height: "100%" }}
-        />
+        {SlowView}
       </div>
     </div>
   );
