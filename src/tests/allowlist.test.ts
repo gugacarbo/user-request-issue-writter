@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs", () => ({
 	readFileSync: vi.fn(),
+	existsSync: vi.fn(() => true),
 }));
 
 const { readFileSync } = await import("node:fs");

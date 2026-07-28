@@ -1,12 +1,21 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function resolveReposJsonPath(): string {
+	const candidates = [
+		join(__dirname, "..", "repos.json"), // dist/index.js -> project root
+		join(__dirname, "..", "..", "repos.json"), // src/config -> project root (tsx dev)
+		join(process.cwd(), "repos.json"),
+	];
+	return candidates.find((path) => existsSync(path)) ?? candidates[0]!;
+}
+
 function loadAllowlist(): Set<string> {
 	try {
-		const data = readFileSync(join(__dirname, "..", "repos.json"), "utf8");
+		const data = readFileSync(resolveReposJsonPath(), "utf8");
 		return new Set(JSON.parse(data) as string[]);
 	} catch (error) {
 		console.warn(

@@ -11,25 +11,25 @@
 
 
 ### Local — Normal webhook (202 + background processing, full context)
-POST https://gustavo-report-to-issue-agent.kzwirq.easypanel.host/webhook/github
+POST http://localhost:8080/webhook/github
 Content-Type: application/json
 Authorization: Bearer 65d69bd16304ac87283ef51729c5de9e79b12fde3847bda17a6aa07e86cf2799
 
-{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug","contexto_da_sessao":"Chrome 120 on macOS","logs_do_console":"TypeError: cannot read addEventListener","logs_de_rede":"POST /api/login 500"}}
+{"repo":"gugacarbo/user-request-issue-writer","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug","contexto_da_sessao":"Chrome 120 on macOS","logs_do_console":"TypeError: cannot read addEventListener","logs_de_rede":"POST /api/login 500"}}
 
 ### Local — Duplicate body (same body as above → 200 duplicate:true)
 POST http://localhost:8080/webhook/github
 Content-Type: application/json
 Authorization: Bearer 65d69bd16304ac87283ef51729c5de9e79b12fde3847bda17a6aa07e86cf2799
 
-{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug","contexto_da_sessao":"Chrome 120 on macOS","logs_do_console":"TypeError: cannot read addEventListener","logs_de_rede":"POST /api/login 500"}}
+{"repo":"gugacarbo/user-request-issue-writer","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug","contexto_da_sessao":"Chrome 120 on macOS","logs_do_console":"TypeError: cannot read addEventListener","logs_de_rede":"POST /api/login 500"}}
 
 ### Local — DryRun (200 + JSON with drafted issue, no createIssue)
 POST http://localhost:8080/webhook/github?dryRun=true
 Content-Type: application/json
 Authorization: Bearer 65d69bd16304ac87283ef51729c5de9e79b12fde3847bda17a6aa07e86cf2799
 
-{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
+{"repo":"gugacarbo/user-request-issue-writer","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
 
 ### Local — Healthcheck
 GET http://localhost:8080/health
@@ -39,11 +39,11 @@ POST https://<host>/webhook/github
 Content-Type: application/json
 Authorization: Bearer 65d69bd16304ac87283ef51729c5de9e79b12fde3847bda17a6aa07e86cf2799
 
-{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
+{"repo":"gugacarbo/user-request-issue-writer","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
 
 ### Remote — DryRun (replace <host> with your VPS domain/IP)
 POST https://<host>/webhook/github?dryRun=true
 Content-Type: application/json
 Authorization: Bearer 65d69bd16304ac87283ef51729c5de9e79b12fde3847bda17a6aa07e86cf2799
 
-{"repo":"gugacarbo/user-request-issue-writter","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}
+{"repo":"gugacarbo/user-request-issue-writer","requester":{"name":"Alice","email":"alice@example.com"},"payload":{"descricao":"The login button is broken. When I click it, nothing happens.","url_atual":"https://app.example.com/login","categoria":"bug"}}

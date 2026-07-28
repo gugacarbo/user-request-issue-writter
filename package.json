@@ -1,5 +1,5 @@
 {
-	"name": "user-request-issue-writter",
+	"name": "user-request-issue-writer",
 	"version": "1.0.0",
 	"description": "Webhook server that turns GitHub issue comments into issues via an LLM with function calling.",
 	"type": "module",
