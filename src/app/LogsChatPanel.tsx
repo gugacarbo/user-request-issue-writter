@@ -90,11 +90,12 @@ export function LogsChatPanel({
 				showCopyToolbar={false}
 				virtualized
 				showTurnDividers
+				splitAssistantMessages
 				groupConsecutiveTools
 				classNames={{
-					content: "max-w-2xl",
+					content: "w-full max-w-none px-2 sm:px-4",
 					assistantBubble:
-						"w-full max-w-[min(92%,30rem)] rounded-an-message border border-border/60 bg-muted/25 px-3 py-2.5 shadow-sm",
+						"w-full max-w-[min(96%,52rem)] rounded-an-message border border-border/60 bg-muted/25 px-3 py-2.5 shadow-sm",
 				}}
 				slots={{
 					UserMessage: LogsUserMessage,

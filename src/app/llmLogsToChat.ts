@@ -127,6 +127,20 @@ function formatLlmMeta(data: Record<string, unknown> | null): string | null {
 	return lines.length > 0 ? lines.join(" · ") : null;
 }
 
+function turnLabelPart(
+	iteration: number | null,
+): { type: "text"; text: string } | null {
+	if (iteration === null) return null;
+	return { type: "text", text: `**Turno ${iteration + 1}**` };
+}
+
+function agentTextPart(
+	content: unknown,
+): { type: "text"; text: string } | null {
+	if (typeof content !== "string" || !content.trim()) return null;
+	return { type: "text", text: content.trim() };
+}
+
 function markerText(
 	event: string,
 	data: Record<string, unknown> | null,
@@ -158,36 +172,9 @@ function summarizeMarkerData(data: Record<string, unknown> | null): string {
 	return preview;
 }
 
-function lastAssistantMessage(
-	messages: UIMessage[],
-): (UIMessage & { parts: unknown[] }) | null {
-	for (let i = messages.length - 1; i >= 0; i -= 1) {
-		const message = messages[i];
-		if (message?.role === "assistant") {
-			return message as UIMessage & { parts: unknown[] };
-		}
-	}
-	return null;
-}
-
 function appendAssistantPart(messages: UIMessage[], part: unknown): void {
-	const last = lastAssistantMessage(messages);
-	if (last) {
-		last.parts.push(part);
-		return;
-	}
-	messages.push(uiMessage(`assistant-tool-${messages.length}`, "assistant", [part]));
-}
-
-function appendAssistantParts(messages: UIMessage[], parts: unknown[]): void {
-	if (parts.length === 0) return;
-	const last = lastAssistantMessage(messages);
-	if (last) {
-		last.parts.push(...parts);
-		return;
-	}
 	messages.push(
-		uiMessage(`assistant-tools-${messages.length}`, "assistant", parts),
+		uiMessage(`assistant-tool-${messages.length}`, "assistant", [part]),
 	);
 }
 
@@ -228,8 +215,7 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 
 			case "llm response": {
 				const content = log.data?.content;
-				const hasContent =
-					typeof content === "string" && content.trim().length > 0;
+				const reasoning = agentTextPart(content);
 				const toolCalls = log.data?.toolCalls;
 				const toolNames = Array.isArray(toolCalls)
 					? toolCalls.filter((name): name is string => typeof name === "string")
@@ -246,24 +232,22 @@ export function llmLogsToUIMessages(logs: LlmLogRow[]): UIMessage[] {
 					return part;
 				});
 
-				if (!hasContent && toolParts.length > 0 && lastAssistantMessage(messages)) {
-					appendAssistantParts(messages, toolParts);
-					break;
-				}
-
 				const parts: Array<{ type: "text"; text: string } | ToolPart> = [];
-				if (hasContent) {
-					if (log.iteration !== null) {
-						parts.push({
-							type: "text",
-							text: `**Turno ${log.iteration + 1}**`,
-						});
-					}
-					parts.push({ type: "text", text: content.trim() });
+				if (reasoning) {
+					const turn = turnLabelPart(log.iteration);
+					if (turn) parts.push(turn);
+					parts.push(reasoning);
 					const meta = formatLlmMeta(log.data);
 					if (meta) {
 						parts.push({ type: "text", text: meta });
 					}
+				} else if (
+					toolParts.length > 0 &&
+					log.iteration !== null &&
+					log.iteration > 0
+				) {
+					const turn = turnLabelPart(log.iteration);
+					if (turn) parts.push(turn);
 				}
 				parts.push(...toolParts);
 

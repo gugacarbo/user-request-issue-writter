@@ -48,6 +48,8 @@ export type MessageListProps = {
   virtualized?: boolean;
   /** Visual separators between conversation turns (e.g. log retries). */
   showTurnDividers?: boolean;
+  /** One assistant bubble per replayed LLM response (logs UI). */
+  splitAssistantMessages?: boolean;
   slots?: {
     UserMessage?: React.ComponentType<{
       message: UIMessage;
@@ -313,6 +315,7 @@ type MessageTurnRowProps = {
   CustomGroupedTools?: React.ComponentType<GroupedToolsProps>;
   groupConsecutiveTools: boolean;
   showTurnDividers?: boolean;
+  splitAssistantMessages?: boolean;
   toolRenderers?: MessageListProps["toolRenderers"];
   onCopied: (id: string) => void;
 };
@@ -335,6 +338,7 @@ const MessageTurnRow = memo(function MessageTurnRow({
   CustomGroupedTools,
   groupConsecutiveTools,
   showTurnDividers = false,
+  splitAssistantMessages = false,
   toolRenderers,
   onCopied,
 }: MessageTurnRowProps) {
@@ -397,6 +401,53 @@ const MessageTurnRow = memo(function MessageTurnRow({
       {turn.assistantMsgs.length > 0 &&
         !(isLastTurn && showPlanning) &&
         (() => {
+          const renderAssistantParts = (
+            msg: UIMessage,
+            msgIndex: number,
+            isLastMsg: boolean,
+          ) => (
+            <AssistantParts
+              key={msg.id}
+              msg={msg}
+              isLast={isLastMsg}
+              isStreaming={isStreaming}
+              suppressQuestionTool={suppressQuestionTool}
+              ToolRendererComponent={CustomToolRenderer}
+              GroupedToolsComponent={CustomGroupedTools}
+              groupConsecutiveTools={groupConsecutiveTools}
+              toolRenderers={toolRenderers}
+            />
+          );
+
+          if (splitAssistantMessages && assistantBubbleClass) {
+            return (
+              <div className="flex flex-col gap-2">
+                {turn.assistantMsgs.map((msg, i) => {
+                  const isLastMsg =
+                    isLastTurn && i === turn.assistantMsgs.length - 1;
+                  return (
+                    <div
+                      key={msg.id}
+                      className="group/assistant-turn flex justify-start"
+                    >
+                      <div
+                        className={cn(
+                          assistantBubbleClass,
+                          "flex w-full max-w-[min(96%,52rem)] flex-col gap-1",
+                        )}
+                      >
+                        <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                          {i === 0 ? "Agente" : `Turno ${i + 1}`}
+                        </span>
+                        {renderAssistantParts(msg, i, isLastMsg)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          }
+
           const assistantText = getTextFromParts(
             turn.assistantMsgs.flatMap((msg) => msg.parts ?? []),
             "\n\n",
@@ -419,7 +470,7 @@ const MessageTurnRow = memo(function MessageTurnRow({
               <div
                 className={cn(
                   assistantBubbleClass &&
-                    "flex w-full max-w-[min(92%,30rem)] flex-col gap-1",
+                    "flex w-full max-w-[min(96%,52rem)] flex-col gap-1",
                 )}
               >
                 {assistantBubbleClass ? (
@@ -436,19 +487,7 @@ const MessageTurnRow = memo(function MessageTurnRow({
                     {turn.assistantMsgs.map((msg, i) => {
                       const isLastMsg =
                         isLastTurn && i === turn.assistantMsgs.length - 1;
-                      return (
-                        <AssistantParts
-                          key={msg.id}
-                          msg={msg}
-                          isLast={isLastMsg}
-                          isStreaming={isStreaming}
-                          suppressQuestionTool={suppressQuestionTool}
-                          ToolRendererComponent={CustomToolRenderer}
-                          GroupedToolsComponent={CustomGroupedTools}
-                          groupConsecutiveTools={groupConsecutiveTools}
-                          toolRenderers={toolRenderers}
-                        />
-                      );
+                      return renderAssistantParts(msg, i, isLastMsg);
                     })}
                   </div>
                   {showToolbar ? (
@@ -499,6 +538,7 @@ export const MessageList = memo(function MessageList({
   groupConsecutiveTools = false,
   virtualized = false,
   showTurnDividers = false,
+  splitAssistantMessages = false,
   slots,
   classNames,
   toolRenderers,
@@ -777,7 +817,10 @@ export const MessageList = memo(function MessageList({
     >
       <div
         ref={contentWrapperRef}
-        className={cn("mx-auto px-4 py-6 max-w-an", classNames?.content)}
+        className={cn(
+          "mx-auto px-4 py-6",
+          classNames?.content ?? "max-w-an",
+        )}
       >
         {virtualized ? (
           <div
@@ -813,6 +856,7 @@ export const MessageList = memo(function MessageList({
                     CustomGroupedTools={CustomGroupedTools}
                     groupConsecutiveTools={groupConsecutiveTools}
                     showTurnDividers={showTurnDividers}
+                    splitAssistantMessages={splitAssistantMessages}
                     toolRenderers={toolRenderers}
                     onCopied={markCopied}
                   />
@@ -842,6 +886,7 @@ export const MessageList = memo(function MessageList({
                 CustomGroupedTools={CustomGroupedTools}
                 groupConsecutiveTools={groupConsecutiveTools}
                 showTurnDividers={showTurnDividers}
+                splitAssistantMessages={splitAssistantMessages}
                 toolRenderers={toolRenderers}
                 onCopied={markCopied}
               />

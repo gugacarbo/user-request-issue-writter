@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils";
 import { CountsCards } from "./CountsCards";
 import { ModeToggle } from "./components/mode-toggle";
 import { LogsPanel } from "./LogsPanel";
+import { mergeLogRows } from "./mergeLogs";
 import { QueueTable } from "./QueueTable";
 import { RunDialog } from "./RunDialog";
-import { mergeLogRows } from "./mergeLogs";
 import type { Counts, LlmLogRow, QueueSummaryRow } from "./types";
 import { useSse } from "./useSse";
 

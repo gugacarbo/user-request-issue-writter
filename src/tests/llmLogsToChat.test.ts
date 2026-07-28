@@ -65,7 +65,7 @@ describe("llmLogsToUIMessages", () => {
 		expect(parts[1]?.toolCallId).toBe(toolCallId("read_file", 0, 1));
 	});
 
-	it("appends tool-only turns to the previous assistant message", () => {
+	it("creates separate assistant messages for tool-only turns", () => {
 		const logs: LlmLogRow[] = [
 			row({
 				id: 1,
@@ -82,12 +82,34 @@ describe("llmLogsToUIMessages", () => {
 		];
 
 		const messages = llmLogsToUIMessages(logs);
-		expect(messages.filter((m) => m.role === "assistant")).toHaveLength(1);
-		const parts = messages[0]?.parts as Array<{ type?: string }>;
-		expect(parts.map((p) => p.type)).toEqual([
+		const assistant = messages.filter((m) => m.role === "assistant");
+		expect(assistant).toHaveLength(2);
+		expect((assistant[0]?.parts as Array<{ type?: string }>).map((p) => p.type)).toEqual([
 			"tool-list_files",
+		]);
+		expect((assistant[1]?.parts as Array<{ type?: string }>).map((p) => p.type)).toEqual([
+			"text",
 			"tool-read_file",
 		]);
+	});
+
+	it("shows agent reasoning text before tools in the same LLM turn", () => {
+		const logs: LlmLogRow[] = [
+			row({
+				id: 1,
+				event: "llm response",
+				iteration: 1,
+				data: {
+					toolCalls: ["list_files"],
+					content: "Vou listar o diretório src.",
+				},
+			}),
+		];
+
+		const messages = llmLogsToUIMessages(logs);
+		const parts = messages[0]?.parts as Array<{ type?: string; text?: string }>;
+		expect(parts.map((p) => p.type)).toEqual(["text", "text", "tool-list_files"]);
+		expect(parts[1]?.text).toBe("Vou listar o diretório src.");
 	});
 
 	it("structures tool results for the issue tool renderers", () => {
@@ -246,7 +268,9 @@ describe("llmLogsToUIMessages submit_issue", () => {
 
 		const messages = llmLogsToUIMessages(logs);
 		const assistant = messages.find((m) => m.id === "assistant-1");
-		const part = assistant?.parts?.[0] as {
+		const part = assistant?.parts?.find(
+			(p) => (p as { type?: string }).type === "tool-get_repo_info",
+		) as {
 			state?: string;
 			output?: { text?: string };
 		};
