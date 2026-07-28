@@ -1,7 +1,7 @@
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
 import { prepareScreenshotMarkdown } from "../issue/screenshot";
-import { buildIssueBody } from "../issue/template";
+import { buildIssueBody, toTicketHeaderInput } from "../issue/template";
 import type { GenerateIssueInput, IssueContext, LlmClient } from "../llm/llm";
 import { generateIssue } from "../llm/llm";
 import { extractTicket } from "../web/webhook";
@@ -170,6 +170,7 @@ async function processOne(
 		const body = buildIssueBody({
 			agentBody: proposal.body,
 			rawUserMessage: input.descricao,
+			ticket: toTicketHeaderInput(ticket),
 			screenshotMarkdown,
 			requesterName: input.requesterName,
 			requesterEmail: input.requesterEmail,
@@ -224,6 +225,7 @@ function ticketContextFromTicket(
 		logsConsole: ticket.logsConsole,
 		logsRede: ticket.logsRede,
 		screenshot: ticket.screenshot,
+		metadata: ticket.metadata,
 	};
 	const hasContext = Object.values(context).some(
 		(value) => value !== undefined,

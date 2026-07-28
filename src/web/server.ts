@@ -4,7 +4,7 @@ import { isRepoAllowed } from "../config/allowlist";
 import type { DB } from "../db";
 import type { GitHubClient } from "../github/github";
 import { prepareScreenshotMarkdown } from "../issue/screenshot";
-import { buildIssueBody } from "../issue/template";
+import { buildIssueBody, toTicketHeaderInput } from "../issue/template";
 import {
 	type GenerateIssueInput,
 	generateIssue,
@@ -51,6 +51,7 @@ function extractContextFields(ctx: TicketContext): IssueContext {
 		logsConsole: ctx.logsConsole,
 		logsRede: ctx.logsRede,
 		screenshot: ctx.screenshot,
+		metadata: ctx.metadata,
 	};
 }
 
@@ -161,6 +162,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 						body: buildIssueBody({
 							agentBody: proposal.body,
 							rawUserMessage: input.descricao,
+							ticket: toTicketHeaderInput(ctx),
 							screenshotMarkdown,
 							requesterName: input.requesterName,
 							requesterEmail: input.requesterEmail,

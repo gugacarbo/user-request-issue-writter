@@ -4,6 +4,9 @@ import {
 	agentIssueBodyInstructions,
 	buildIssueBody,
 	formatScreenshotMarkdown,
+	formatTicketHeader,
+	formatTicketDiagnostics,
+	toTicketHeaderInput,
 } from "../issue/template";
 
 describe("issue template", () => {
@@ -28,10 +31,129 @@ describe("issue template", () => {
 		expect(formatScreenshotMarkdown("   ")).toBeNull();
 	});
 
+	it("formatTicketHeader renders main webhook fields without diagnostics", () => {
+		const header = formatTicketHeader(
+			toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				urlAtual: "https://app.example.com/login",
+				categoria: "bug",
+				contextoSessao: "Chrome 120 on macOS",
+				logsConsole: "TypeError: boom",
+				logsRede: "POST /api/login 500",
+				screenshot: "https://cdn.example.com/shot.png",
+				metadata: { ticketId: "42" },
+			}),
+		);
+
+		expect(header).toContain("## Informações do ticket");
+		expect(header).toContain("**Repositório:** owner/repo");
+		expect(header).toContain("**Solicitante:** Alice (alice@example.com)");
+		expect(header).toContain("**URL atual:** https://app.example.com/login");
+		expect(header).toContain("**Categoria:** bug");
+		expect(header).toContain("**Screenshot:** https://cdn.example.com/shot.png");
+		expect(header).not.toContain("Contexto da sessão");
+		expect(header).not.toContain("Logs do console");
+		expect(header).toContain("### Metadados");
+		expect(header).toContain('"ticketId": "42"');
+	});
+
+	it("formatTicketDiagnostics renders session context and logs when present", () => {
+		const diagnostics = formatTicketDiagnostics(
+			toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				contextoSessao: "Chrome 120 on macOS",
+				logsConsole: "TypeError: boom",
+				logsRede: "POST /api/login 500",
+			}),
+		);
+
+		expect(diagnostics).toContain("## Contexto da sessão");
+		expect(diagnostics).toContain("Chrome 120 on macOS");
+		expect(diagnostics).toContain("### Logs do console");
+		expect(diagnostics).toContain("TypeError: boom");
+		expect(diagnostics).toContain("### Logs de rede");
+		expect(diagnostics).toContain("POST /api/login 500");
+	});
+
+	it("formatTicketDiagnostics returns null when nothing relevant is present", () => {
+		expect(
+			formatTicketDiagnostics(
+				toTicketHeaderInput({
+					owner: "owner",
+					repo: "repo",
+					requesterName: "Alice",
+					requesterEmail: "alice@example.com",
+				}),
+			),
+		).toBeNull();
+	});
+
+	it("buildIssueBody places diagnostics after agent content and before footer", () => {
+		const body = buildIssueBody({
+			agentBody: "## Resumo\nLogin broken.",
+			rawUserMessage: "The login button is broken.",
+			ticket: toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				contextoSessao: "Chrome 120 on macOS",
+				logsConsole: "TypeError: boom",
+			}),
+			requesterName: "Alice",
+			requesterEmail: "alice@example.com",
+		});
+
+		expect(body).toContain("## Contexto da sessão");
+		expect(body).toContain("TypeError: boom");
+		expect(body.indexOf("## Resumo")).toBeLessThan(
+			body.indexOf("## Contexto da sessão"),
+		);
+		expect(body.indexOf("TypeError: boom")).toBeLessThan(body.indexOf("---"));
+	});
+
+	it("buildIssueBody places ticket header before the raw user message", () => {
+		const body = buildIssueBody({
+			agentBody: "## Resumo\nLogin broken.",
+			rawUserMessage: "The login button is broken.",
+			ticket: toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+				urlAtual: "https://app.example.com/login",
+				categoria: "bug",
+			}),
+			requesterName: "Alice",
+			requesterEmail: "alice@example.com",
+		});
+
+		expect(body).toContain("## Informações do ticket");
+		expect(body).toContain("## Mensagem original do usuário");
+		expect(body.indexOf("## Informações do ticket")).toBeLessThan(
+			body.indexOf("## Mensagem original do usuário"),
+		);
+		expect(body.indexOf("The login button is broken.")).toBeLessThan(
+			body.indexOf("## Resumo"),
+		);
+	});
+
 	it("buildIssueBody includes screenshot section when provided", () => {
 		const body = buildIssueBody({
 			agentBody: "## Resumo\nLogin broken.",
 			rawUserMessage: "The login button is broken.",
+			ticket: toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+			}),
 			screenshotMarkdown:
 				"![Screenshot](https://cdn.example.com/shot.png)",
 			requesterName: "Alice",
@@ -52,6 +174,12 @@ describe("issue template", () => {
 		const body = buildIssueBody({
 			agentBody: "## Resumo\nLogin broken.",
 			rawUserMessage: "The login button is broken.",
+			ticket: toTicketHeaderInput({
+				owner: "owner",
+				repo: "repo",
+				requesterName: "Alice",
+				requesterEmail: "alice@example.com",
+			}),
 			requesterName: "Alice",
 			requesterEmail: "alice@example.com",
 		});

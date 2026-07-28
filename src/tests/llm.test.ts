@@ -173,6 +173,7 @@ describe("llm.generateIssue", () => {
 				logsConsole: "Error: something",
 				logsRede: "GET /api 500",
 				screenshot: "data:image/png;base64,...",
+				metadata: { ticketId: "42" },
 			},
 		});
 		const firstCall = (llm.chat as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
@@ -183,6 +184,8 @@ describe("llm.generateIssue", () => {
 		expect(systemText).toContain("Error: something");
 		expect(systemText).toContain("GET /api 500");
 		expect(systemText).toContain("data:image/png;base64,...");
+		expect(systemText).toContain("Metadata:");
+		expect(systemText).toContain("ticketId");
 	});
 
 	it("handles toolCalls being undefined in response", async () => {

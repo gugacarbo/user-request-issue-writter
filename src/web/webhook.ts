@@ -16,15 +16,24 @@ export type TicketContext = {
 	readonly logsConsole?: string;
 	readonly logsRede?: string;
 	readonly screenshot?: string;
+	readonly metadata?: Record<string, unknown>;
 };
 
 type ExtractTicketOptions = {
 	readonly nocobasePublicUrl?: string;
 };
 
+function normalizeMetadata(value: unknown): Record<string, unknown> | undefined {
+	if (value === null || value === undefined) return undefined;
+	if (typeof value !== "object" || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	return Object.keys(record).length > 0 ? record : undefined;
+}
+
 type TicketPayload = {
 	repo?: string;
 	requester?: { name?: string; email?: string };
+	metadata?: unknown;
 	payload?: {
 		descricao?: string;
 		url_atual?: string;
@@ -88,5 +97,6 @@ export function extractTicket(
 		logsConsole: p?.logs_do_console?.trim() || undefined,
 		logsRede: p?.logs_de_rede?.trim() || undefined,
 		screenshot: resolved.screenshot,
+		metadata: normalizeMetadata(payload.metadata),
 	};
 }

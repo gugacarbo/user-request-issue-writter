@@ -14,6 +14,7 @@ const TOKEN = webhookAuthToken(SECRET);
 const FULL_PAYLOAD = JSON.stringify({
 	repo: "owner/repo",
 	requester: { name: "Alice", email: "alice@example.com" },
+	metadata: { ticketId: "42", source: "nocobase" },
 	payload: {
 		descricao: "The login button is broken",
 		url_atual: "https://app.example.com/login",
@@ -77,6 +78,7 @@ describe("extractTicket", () => {
 		expect(ctx.logsConsole).toBe("TypeError: cannot read 'addEventListener'");
 		expect(ctx.logsRede).toBe("POST /api/login 500");
 		expect(ctx.screenshot).toBe("https://cdn.example.com/shot.png");
+		expect(ctx.metadata).toEqual({ ticketId: "42", source: "nocobase" });
 	});
 
 	it("works with only mandatory fields (descricao + repo)", () => {
@@ -170,5 +172,38 @@ describe("extractTicket", () => {
 		}) as TicketContext;
 		expect(ctx.urlAtual).toBeUndefined();
 		expect(ctx.categoria).toBeUndefined();
+	});
+
+	it("extracts metadata when provided", () => {
+		const ctx = extractTicket({
+			repo: "owner/repo",
+			metadata: { recordId: 99, nested: { ok: true } },
+			payload: { descricao: "test" },
+		}) as TicketContext;
+		expect(ctx.metadata).toEqual({ recordId: 99, nested: { ok: true } });
+	});
+
+	it("ignores invalid or empty metadata", () => {
+		expect(
+			extractTicket({
+				repo: "owner/repo",
+				metadata: {},
+				payload: { descricao: "test" },
+			})?.metadata,
+		).toBeUndefined();
+		expect(
+			extractTicket({
+				repo: "owner/repo",
+				metadata: "not-an-object",
+				payload: { descricao: "test" },
+			})?.metadata,
+		).toBeUndefined();
+		expect(
+			extractTicket({
+				repo: "owner/repo",
+				metadata: ["array"],
+				payload: { descricao: "test" },
+			})?.metadata,
+		).toBeUndefined();
 	});
 });

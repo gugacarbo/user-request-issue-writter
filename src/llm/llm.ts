@@ -43,6 +43,7 @@ export type IssueContext = {
 	readonly logsConsole?: string;
 	readonly logsRede?: string;
 	readonly screenshot?: string;
+	readonly metadata?: Record<string, unknown>;
 };
 
 export type GenerateIssueInput = {
@@ -84,6 +85,9 @@ function buildUserMessage(input: GenerateIssueInput): string {
 		if (c.logsConsole) lines.push(`Console logs:\n${c.logsConsole}`);
 		if (c.logsRede) lines.push(`Network logs:\n${c.logsRede}`);
 		if (c.screenshot) lines.push(`Screenshot: ${c.screenshot}`);
+		if (c.metadata) {
+			lines.push(`Metadata:\n${JSON.stringify(c.metadata, null, 2)}`);
+		}
 	}
 	lines.push(
 		"",

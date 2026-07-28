@@ -46,6 +46,7 @@ Formato do corpo:
 {
   "repo": "owner/repo",
   "requester": { "name": "Alice", "email": "alice@example.com" },
+  "metadata": { "ticketId": "42", "source": "nocobase" },
   "payload": {
     "descricao": "The login button is broken.",
     "url_atual": "https://app.example.com/login",
@@ -65,7 +66,9 @@ are ignored.
 
 Somente `repo` (no formato `owner/repo`) e `payload.descricao` são
 obrigatórios; os demais campos são opcionais e enriquecem o contexto
-enviado ao LLM. O `repo` precisa estar no allowlist (`repos.json`).
+enviado ao LLM. `metadata` é um objeto JSON arbitrário (`Record<string, unknown>`)
+no topo do ticket — valores não-objeto ou objetos vazios são ignorados.
+O `repo` precisa estar no allowlist (`repos.json`).
 
 Para assinar (ex.: com o `WEBHOOK_SECRET`):
 
